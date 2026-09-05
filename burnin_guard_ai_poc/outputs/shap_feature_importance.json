@@ -1,0 +1,32 @@
+{
+  "iddq_uA": {
+    "temperature_c": 1.0904244184494019,
+    "iddq_uA_last_lot_zscore": 0.725764274597168,
+    "iddq_uA_0h": 0.4456847608089447,
+    "iddq_uA_physics_norm_slope": 0.265409916639328,
+    "leakage_uA_0h": 0.2579104006290436,
+    "iddq_uA_slope_lot_zscore": 0.14835792779922485,
+    "delay_ns_physics_norm_slope": 0.08991221338510513,
+    "leakage_uA_last_lot_zscore": 0.07949557155370712
+  },
+  "leakage_uA": {
+    "leakage_uA_0h": 0.1584320366382599,
+    "temperature_c": 0.08353535830974579,
+    "leakage_uA_last_lot_zscore": 0.0737500861287117,
+    "leakage_uA_physics_norm_slope": 0.060599468648433685,
+    "iddq_uA_last_lot_zscore": 0.024467311799526215,
+    "delay_ns_last_lot_zscore": 0.016847040504217148,
+    "iddq_uA_0h": 0.01329693105071783,
+    "delay_ns_physics_norm_slope": 0.009483094327151775
+  },
+  "delay_ns": {
+    "temperature_c": 0.18325260281562805,
+    "delay_ns_0h": 0.13677337765693665,
+    "delay_ns_last_lot_zscore": 0.030451249331235886,
+    "iddq_uA_physics_norm_slope": 0.02245623804628849,
+    "delay_ns_slope_lot_zscore": 0.015662074089050293,
+    "delay_ns_physics_norm_slope": 0.014653131365776062,
+    "leakage_uA_last_lot_zscore": 0.010916006751358509,
+    "leakage_uA_physics_norm_slope": 0.008822969160974026
+  }
+}
