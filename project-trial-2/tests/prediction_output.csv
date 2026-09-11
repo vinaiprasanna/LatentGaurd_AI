@@ -1,14 +1,1 @@
-dut_id,lot_id,temperature_c,arrhenius_accel_factor,anomaly_ensemble_score,anomaly_ensemble_confidence,risk_score,risk_band,risk_confidence_pct,predicted_outcome,explanation
-IC0001,LOT2026A,108.76,0.4199576713593804,0.0,1.0,3.7,LOW,99.6,PASS,significant deviation from lot population (contribution 0.08); high physics-normalised drift rate (contribution 0.05).
-IC0002,LOT2026A,111.07,0.47724832699493536,0.0,1.0,2.5,LOW,97.4,PASS,significant deviation from lot population (contribution 0.11).
-IC0003,LOT2026A,111.0,0.4754131951417325,0.0,1.0,3.1,LOW,96.5,PASS,significant deviation from lot population (contribution 0.13).
-IC0004,LOT2026A,110.35,0.4586753078127318,0.0,1.0,2.6,LOW,98.0,PASS,significant deviation from lot population (contribution 0.12).
-IC0005,LOT2026A,106.8,0.3763154194032035,0.0,1.0,3.3,LOW,97.6,PASS,significant deviation from lot population (contribution 0.13).
-IC0006,LOT2026A,109.77,0.44419247789836264,0.0,1.0,3.7,LOW,97.0,PASS,significant deviation from lot population (contribution 0.13).
-IC0007,LOT2026A,108.34,0.41023742282128733,0.0,1.0,3.8,LOW,96.9,PASS,significant deviation from lot population (contribution 0.17).
-IC0008,LOT2026A,109.66,0.441492927402338,0.28732515170106043,0.5820500380442364,22.6,LOW,73.3,PASS,high physics-normalised drift rate (contribution 0.52); abnormal multi-parameter pattern (ensemble anomaly score) (contribution 0.29).
-IC0009,LOT2026A,108.35,0.4104664677770522,0.0,1.0,4.5,LOW,100.0,PASS,significant deviation from lot population (contribution 0.14); high physics-normalised drift rate (contribution 0.09).
-IC0010,LOT2026A,109.85,0.4461651681395295,0.0,1.0,3.2,LOW,99.1,PASS,significant deviation from lot population (contribution 0.09).
-IC0011,LOT2026A,127.68,1.146160213393103,0.7,0.0,86.2,CRITICAL,12.3,FAIL,high physics-normalised drift rate (contribution 1.00); predicted value approaching the safety limit (contribution 1.00); significant deviation from lot population (contribution 0.91).
-IC0012,LOT2026A,128.02,1.166017169356915,0.7,0.0,75.6,HIGH,10.8,FAIL,high physics-normalised drift rate (contribution 0.88); predicted value approaching the safety limit (contribution 0.77); significant deviation from lot population (contribution 0.73).
-IC0013,LOT2026A,130.74,1.3363793210742807,0.7,0.0,79.4,HIGH,0.0,FAIL,significant deviation from lot population (contribution 1.00); high physics-normalised drift rate (contribution 0.80); predicted value approaching the safety limit (contribution 0.77).
+dut_id,lot_id,risk_score,risk_band,risk_confidence_pct,predicted_outcome,explanation
