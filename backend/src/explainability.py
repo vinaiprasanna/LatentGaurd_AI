@@ -2,12 +2,8 @@
 Explainability layer.
 
 Produces a short, human-readable reason string for each flagged DUT,
-built from:
-  - the risk-fusion component breakdown (anomaly / lot deviation /
-    drift rate / future margin) computed in risk_engine.py
-  - SHAP values on the primary drift model, when the `shap` package is
-    available (falls back to built-in feature importances otherwise,
-    so the PoC runs even in minimal environments).
+built from the risk-fusion component breakdown and global feature
+importances.
 """
 import numpy as np
 
@@ -53,7 +49,7 @@ def shap_summary(model, X, feature_names, max_display=8):
             ranked = sorted(zip(feature_names, mean_abs), key=lambda kv: -kv[1])
             return dict(ranked[:max_display])
         except Exception:
-            pass  # fall through to built-in importances
+            pass
 
     try:
         importances = model.feature_importances_

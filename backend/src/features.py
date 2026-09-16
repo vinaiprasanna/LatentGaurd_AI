@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 PARAMS = ["iddq_uA", "leakage_uA", "delay_ns"]
-EA_EV = 0.7           # activation energy assumption (eV) for Arrhenius scaling
+EA_EV = 0.7
 K_BOLTZMANN = 8.617e-5
 T_REF_C = 125.0
 
@@ -38,16 +38,12 @@ def build_dut_features(raw_df: pd.DataFrame) -> pd.DataFrame:
             v0, v_last = v[0], v[-1]
             abs_change = v_last - v0
             pct_change = abs_change / max(v0, 1e-6) * 100.0
-            # simple linear slope (raw drift rate, value/hour)
             slope = np.polyfit(t, v, 1)[0] if len(t) > 1 else 0.0
-            # curvature proxy: is drift accelerating? (2nd derivative sign/magnitude)
             if len(t) >= 3:
                 coeffs2 = np.polyfit(t, v, 2)
                 curvature = coeffs2[0]
             else:
                 curvature = 0.0
-            # physics-informed: Arrhenius-normalised drift rate
-            # (removes the part of the drift explained by burn-in temperature alone)
             physics_norm_slope = slope / max(accel, 1e-6)
 
             rec[f"{p}_0h"] = v0
@@ -62,7 +58,6 @@ def build_dut_features(raw_df: pd.DataFrame) -> pd.DataFrame:
 
     dut_df = pd.DataFrame(records)
 
-    # ---- lot-relative (population) features ----
     for p in PARAMS:
         for col in [f"{p}_last", f"{p}_slope", f"{p}_physics_norm_slope"]:
             lot_mean = dut_df.groupby("lot_id")[col].transform("mean")
@@ -72,7 +67,7 @@ def build_dut_features(raw_df: pd.DataFrame) -> pd.DataFrame:
     return dut_df
 
 
-FEATURE_COLUMNS = None  # populated dynamically by pipeline.py after build
+FEATURE_COLUMNS = None
 
 
 def get_model_feature_columns(dut_df: pd.DataFrame):

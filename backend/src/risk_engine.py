@@ -8,11 +8,7 @@ Combines:
   - predicted future value vs. static safety limit (+ prediction interval)
 
 into a single 0-100 Risk Score, a risk band (LOW/MEDIUM/HIGH/CRITICAL),
-and an overall confidence percentage. This mirrors Section 5.4 of the
-solution blueprint (Bayesian Risk Fusion & Uncertainty Quantification).
-
-The exact weights and thresholds below are PoC defaults and MUST be
-re-calibrated against real reliability data before any production use.
+and an overall confidence percentage.
 """
 import numpy as np
 import pandas as pd
@@ -47,28 +43,18 @@ def _minmax_series(s: pd.Series) -> pd.Series:
 
 
 def compute_risk(dut_df: pd.DataFrame, static_limits: dict, param_list) -> pd.DataFrame:
-    """dut_df must already contain:
-       - anomaly_ensemble_score, anomaly_ensemble_confidence
-       - <param>_last_lot_zscore / <param>_slope_lot_zscore (from features.py)
-       - <param>_pred_168h, _pred_168h_lo/_hi, _pred_interval_width (from drift_model.py)
-    """
     df = dut_df.copy()
 
-    # 1. Anomaly component (already 0-1)
     anomaly_component = df["anomaly_ensemble_score"]
 
-    # 2. Lot deviation: max abs z-score across parameters, min-max scaled
     zscore_cols = [c for c in df.columns if c.endswith("_last_lot_zscore")]
     lot_dev_raw = df[zscore_cols].abs().max(axis=1) if zscore_cols else pd.Series(0, index=df.index)
     lot_dev_component = _minmax_series(lot_dev_raw)
 
-    # 3. Physics-normalised drift rate: max across parameters, min-max scaled
     slope_cols = [c for c in df.columns if c.endswith("_physics_norm_slope")]
     drift_raw = df[slope_cols].abs().max(axis=1) if slope_cols else pd.Series(0, index=df.index)
     drift_component = _minmax_series(drift_raw)
 
-    # 4. Future-margin component: how close is the predicted 168h value (upper
-    #    bound of the interval, i.e. worst case) to the static safety limit?
     margin_scores = []
     for p in param_list:
         pred_hi_col = f"{p}_pred_168h_hi"
@@ -91,8 +77,6 @@ def compute_risk(dut_df: pd.DataFrame, static_limits: dict, param_list) -> pd.Da
     df["risk_score"] = (risk_0_1 * 100).round(1)
     df["risk_band"] = df["risk_score"].apply(_band)
 
-    # Confidence: blend of (a) cross-detector agreement from the anomaly
-    # ensemble and (b) narrowness of the drift prediction interval
     width_cols = [c for c in df.columns if c.endswith("_pred_interval_width")]
     if width_cols:
         avg_width = df[width_cols].mean(axis=1)
@@ -104,7 +88,6 @@ def compute_risk(dut_df: pd.DataFrame, static_limits: dict, param_list) -> pd.Da
         (0.6 * df["anomaly_ensemble_confidence"] + 0.4 * interval_confidence) * 100
     ).round(1)
 
-    # store components for explainability
     df["_component_anomaly"] = anomaly_component.round(3)
     df["_component_lot_deviation"] = lot_dev_component.round(3)
     df["_component_drift_rate"] = drift_component.round(3)

@@ -6,9 +6,6 @@ Arrhenius acceleration factor, project its parameter trajectory beyond
 the end of burn-in (168h) so a QA engineer can "fast-forward" a
 component's projected behaviour and see its remaining margin against
 the static safety limit at, e.g., 500h.
-
-This is a lightweight analytical projection (not a full physics
-simulator) intended to demonstrate the concept end-to-end in the PoC.
 """
 import numpy as np
 
