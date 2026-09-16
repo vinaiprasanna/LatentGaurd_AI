@@ -1,3 +1,4 @@
 .venv
 burnin_guard_ai_poc/selfnote.md
 burnin_guard_ai_poc/src/__pycache__
+node_modules
