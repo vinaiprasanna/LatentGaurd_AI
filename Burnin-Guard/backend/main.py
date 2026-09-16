@@ -43,6 +43,8 @@ _models = load_models()
 
 def run_prediction(df: pd.DataFrame) -> pd.DataFrame:
     ensemble, drift_models = _models
+    if ensemble is None or drift_models is None:
+        raise RuntimeError("Trained models are not available")
 
     dut_df = build_dut_features(df)
     feature_cols = get_model_feature_columns(dut_df)
@@ -82,6 +84,8 @@ def run_prediction(df: pd.DataFrame) -> pd.DataFrame:
                 accel_factor=row["arrhenius_accel_factor"],
             )
             margin = remaining_margin(proj, STATIC_LIMITS[p], 500)
+            if margin is None:
+                raise RuntimeError(f"Projection horizon 500h is unavailable for {p}")
             rec[f"{p}_projected_500h"] = margin["projected_value"]
             rec[f"{p}_margin_pct_500h"] = margin["margin_pct"]
         twin_records.append(rec)
@@ -205,7 +209,7 @@ def get_dut(dut_id: str):
 
 def _get_all_duts():
     """Run prediction on sample data and return all DUT results."""
-    sample_df = build_sample_dut_data()
+    sample_df = pd.read_csv("prediction_input.csv")
     results = run_prediction(sample_df)
     output_cols = [
         "dut_id", "lot_id", "risk_score", "risk_band",
@@ -265,7 +269,7 @@ def _get_sample_dut(dut_id: str):
 
 @app.post("/predict", response_model=List[PredictionResponse])
 def predict(file: UploadFile = File(...)):
-    if not file.filename.endswith(".csv"):
+    if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
 
     try:
@@ -293,7 +297,7 @@ def predict(file: UploadFile = File(...)):
 
 @app.post("/predict/batch")
 def predict_batch(file: UploadFile = File(...)):
-    if not file.filename.endswith(".csv"):
+    if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
 
     try:

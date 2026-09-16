@@ -9,14 +9,16 @@ import pickle
 import pandas as pd
 import numpy as np
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SRC_DIR = os.path.join(ROOT, "src")
+TRAINING_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.dirname(TRAINING_ROOT)
+SRC_DIR = os.path.join(TRAINING_ROOT, "src")
+sys.path.insert(0, TRAINING_ROOT)
 sys.path.insert(0, SRC_DIR)
 
-from features import build_dut_features, get_model_feature_columns, PARAMS
-from drift_model import DriftPredictor
+from src.features import build_dut_features, get_model_feature_columns, PARAMS
+from src.drift_model import DriftPredictor
 
-MODEL_PATH = os.path.join(ROOT, "backend", "models")
+MODEL_PATH = os.path.join(REPO_ROOT, "backend", "models")
 
 
 def train(data_path=None):
@@ -24,7 +26,7 @@ def train(data_path=None):
     if data_path:
         raw_df = pd.read_csv(data_path)
     else:
-        raw_df = pd.read_csv(os.path.join(ROOT, "data", "large_physics_calibrated_burnin_dataset.csv"))
+        raw_df = pd.read_csv(os.path.join(TRAINING_ROOT, "data", "large_physics_calibrated_burnin_dataset.csv"))
 
     print(f"  {len(raw_df)} rows, {raw_df['dut_id'].nunique()} DUTs")
 
