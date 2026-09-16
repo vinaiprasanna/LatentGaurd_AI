@@ -115,7 +115,7 @@ def generate_dataset(
 
 if __name__ == "__main__":
     df = generate_dataset()
-    out_path = "/media/steffan/new/Projects/LatentGaurd_AI/project-trial-2/data/synthetic_burnin_data.csv"
+    out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "synthetic_burnin_data.csv")
     df.to_csv(out_path, index=False)
     print(f"Generated {df['dut_id'].nunique()} DUTs, {len(df)} rows -> {out_path}")
     print(df.groupby("checkpoint_h")["status"].value_counts())
