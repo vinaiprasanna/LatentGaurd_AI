@@ -2584,7 +2584,7 @@ overflow: hidden;
 }
 
 .explainability-details.visible {
-  max-height: 80px;
+  max-height: 360px;
   margin-top: 11px;
   padding-top: 10px;
   border-top-color: rgba(150, 200, 235, 0.07);
@@ -2681,6 +2681,39 @@ overflow: hidden;
   font-weight: 650;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 700px) {
+  .explainability-item-header {
+    align-items: flex-start;
+  }
+
+  .explainability-details {
+    gap: 8px;
+  }
+
+  .explainability-details > span {
+    flex-basis: 100%;
+  }
+
+  .feature-contribution {
+    grid-template-columns: minmax(0, 1fr) 38px;
+    gap: 6px 10px;
+  }
+
+  .feature-contribution > span {
+    grid-column: 1 / -1;
+  }
+
+  .feature-contribution .contribution-bar {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .feature-contribution > strong {
+    grid-column: 2;
+    grid-row: 2;
+  }
 }
 /* =========================
    EXPLANATION METHOD
@@ -3490,8 +3523,4 @@ overflow: hidden;
 .legend-limit {
   background: #ff5f6d;
   box-shadow: 0 0 8px rgba(255, 95, 109, 0.55);
-}
-.explainability-details.visible {
-  max-height: 300px;
-  overflow: visible;
 }
