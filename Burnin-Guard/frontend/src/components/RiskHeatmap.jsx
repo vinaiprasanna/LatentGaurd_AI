@@ -22,6 +22,13 @@ function RiskHeatmap({ anomalyData: propData }) {
 
   const data = (propData || []).slice(0, 12);
 
+  const getComponentScore = (component, index) => {
+    const rawScore = Number(component.risk_score);
+    if (Number.isFinite(rawScore)) return rawScore;
+    const riskScores = { LOW: 20, MEDIUM: 50, HIGH: 75, CRITICAL: 92 };
+    return riskScores[component.risk_band] || 10 + index * 8;
+  };
+
   return (
     <div className="heatmap-container">
       <div className="heatmap-scroll">
@@ -34,7 +41,8 @@ function RiskHeatmap({ anomalyData: propData }) {
             <div className="heatmap-row" key={component.dut_id || component.dutId}>
               <div className="dut-label">{component.dut_id || component.dutId}</div>
               {checkpoints.map((checkpoint, index) => {
-                const score = component.risk_score ? (component.risk_score / 100) : (0.1 + index * 0.1);
+                const riskScore = getComponentScore(component, index);
+                const score = Math.min(Math.max(riskScore / 100, 0), 1);
                 const cellId = `${component.dut_id || component.dutId}-${checkpoint}`;
                 return (
                   <div key={cellId} className="heatmap-cell"
@@ -44,7 +52,7 @@ function RiskHeatmap({ anomalyData: propData }) {
                       boxShadow: `inset 0 1px 0 rgba(255,255,255,0.30), inset 0 -10px 18px rgba(0,0,0,0.12), 0 0 14px ${getRiskColor(score)}35`,
                     }}
                     onMouseEnter={(event) => {
-                      setHoveredCell({ dutId: component.dut_id || component.dutId, checkpoint, score: component.risk_score, risk: getRiskLevel(component.risk_score || score * 100) });
+                      setHoveredCell({ dutId: component.dut_id || component.dutId, checkpoint, score: riskScore, risk: getRiskLevel(riskScore / 100) });
                       const container = event.currentTarget.closest(".heatmap-container");
                       const rect = container.getBoundingClientRect();
                       setTooltipPosition({ x: event.clientX - rect.left + 14, y: event.clientY - rect.top + 14 });
@@ -56,7 +64,7 @@ function RiskHeatmap({ anomalyData: propData }) {
                     }}
                     onMouseLeave={() => setHoveredCell(null)}
                   >
-                    {(component.risk_score || (score * 100)).toFixed(1)}
+                    {riskScore.toFixed(1)}
                   </div>
                 );
               })}

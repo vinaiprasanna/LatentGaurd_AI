@@ -20,12 +20,23 @@ function AuditLog() {
   }, []);
 
   const downloadAuditLog = () => {
-    const auditData = entries.length > 0 ? entries : [
-      ["Timestamp", "DUT ID", "Lot ID", "Risk Band", "Risk Score", "Confidence %", "Explanation", "Model Version"],
-      ["2026-09-16 09:42", "IC0060", "LOT2026B", "CRITICAL", "87.3", "0%", "Predicted value approaching safety limit", "BG-AI-2.0"],
-      ["2026-09-16 09:38", "IC0075", "LOT2026B", "CRITICAL", "87.2", "0%", "Predicted value approaching safety limit", "BG-AI-2.0"],
+    const headers = ["Timestamp", "DUT ID", "Lot ID", "Risk Band", "Risk Score", "Confidence %", "Explanation", "Model Version"];
+    const rows = entries.length > 0 ? entries : [
+      { timestamp: "2026-09-16 09:42", dut_id: "IC0060", lot_id: "LOT2026B", risk_band: "CRITICAL", risk_score: "87.3", confidence_pct: "0", explanation: "Predicted value approaching safety limit", model_version: "BG-AI-2.0" },
+      { timestamp: "2026-09-16 09:38", dut_id: "IC0075", lot_id: "LOT2026B", risk_band: "CRITICAL", risk_score: "87.2", confidence_pct: "0", explanation: "Predicted value approaching safety limit", model_version: "BG-AI-2.0" },
     ];
-    const csv = auditData.map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(",")).join("\n");
+    const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const csvRows = rows.map((entry) => [
+      entry.timestamp,
+      entry.dut_id,
+      entry.lot_id,
+      entry.risk_band,
+      entry.risk_score,
+      entry.confidence_pct,
+      entry.explanation,
+      entry.model_version || 'BG-AI-2.0',
+    ].map(escapeCsv).join(','));
+    const csv = [headers.map(escapeCsv).join(','), ...csvRows].join("\r\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");

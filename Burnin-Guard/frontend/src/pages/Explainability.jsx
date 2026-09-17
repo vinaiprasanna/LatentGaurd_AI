@@ -4,25 +4,18 @@ import { api } from "../api";
 
 function Explainability({ anomalyData: initialAnomalyData }) {
   const [expandedDut, setExpandedDut] = useState(null);
-  const [flaggedComponents, setFlaggedComponents] = useState([]);
-  const [globalFeatureImportance, setGlobalFeatureImportance] = useState([
-    { feature: "temperature_c", importance: 0.31 },
-    { feature: "iddq_uA", importance: 0.27 },
-    { feature: "leakage_uA", importance: 0.19 },
-    { feature: "delay_ns", importance: 0.14 },
-    { feature: "vcc_v", importance: 0.09 },
-  ]);
-  const [driftFeatureImportance, setDriftFeatureImportance] = useState([
-    { feature: "temperature_c", importance: 0.34 },
-    { feature: "iddq_uA", importance: 0.26 },
-    { feature: "burn_in_hours", importance: 0.21 },
-    { feature: "leakage_uA", importance: 0.12 },
-    { feature: "vcc_v", importance: 0.07 },
-  ]);
+  const [modelMetrics, setModelMetrics] = useState(null);
+  const [metricsError, setMetricsError] = useState('');
 
   useEffect(() => {
-    if (initialAnomalyData && initialAnomalyData.length > 0) {
-      const flagged = initialAnomalyData
+    api.getModelMetrics()
+      .then(setModelMetrics)
+      .catch((error) => setMetricsError(error.message || 'Model metrics unavailable'));
+  }, []);
+
+  const globalFeatureImportance = modelMetrics?.anomaly_feature_importance || [];
+  const driftFeatureImportance = modelMetrics?.drift_feature_importance?.iddq_uA || [];
+  const flaggedComponents = (initialAnomalyData || [])
         .filter((d) => d.risk_band === "HIGH" || d.risk_band === "CRITICAL")
         .slice(0, 5)
         .map((d) => ({
@@ -32,16 +25,11 @@ function Explainability({ anomalyData: initialAnomalyData }) {
           riskBand: d.risk_band,
           confidence: d.risk_confidence_pct,
           explanation: d.explanation,
-          features: [
-            { name: "temperature_c", contribution: 0.31 },
-            { name: "iddq_uA", contribution: 0.27 },
-            { name: "leakage_uA", contribution: 0.19 },
-          ],
+          features: globalFeatureImportance.slice(0, 3).map((feature) => ({
+            name: feature.feature,
+            contribution: feature.importance,
+          })),
         }));
-      setFlaggedComponents(flagged);
-    }
-  }, [initialAnomalyData]);
-
   return (
     <div className="analysis-page">
       <div className="analysis-page-header">
@@ -49,6 +37,28 @@ function Explainability({ anomalyData: initialAnomalyData }) {
         <h1>Explainability</h1>
         <p>Understand why components were flagged by the anomaly detection system</p>
       </div>
+
+      <section className="analysis-section model-metrics-section">
+        <div className="panel-header">
+          <div>
+            <span className="panel-label">MODEL VALIDATION</span>
+            <h2>Loaded Model Diagnostics</h2>
+            <p className="section-description">These diagnostics are calculated on the bundled training dataset. They are not held-out validation accuracy.</p>
+          </div>
+        </div>
+        {metricsError && <p className="upload-error">{metricsError}</p>}
+        {modelMetrics?.metrics_available && (
+          <div className="model-metrics-grid">
+            <div className="model-info-item"><span>Features Used</span><strong>{modelMetrics.feature_count}</strong></div>
+            <div className="model-info-item"><span>Training DUTs</span><strong>{modelMetrics.training_duts}</strong></div>
+            <div className="model-info-item"><span>Anomaly Accuracy</span><strong>{(modelMetrics.anomaly.accuracy * 100).toFixed(1)}%</strong></div>
+            <div className="model-info-item"><span>Anomaly F1</span><strong>{(modelMetrics.anomaly.f1 * 100).toFixed(1)}%</strong></div>
+            <div className="model-info-item"><span>IDDQ Drift R2</span><strong>{modelMetrics.drift.iddq_uA?.r2 ?? '--'}</strong></div>
+            <div className="model-info-item"><span>Leakage Drift R2</span><strong>{modelMetrics.drift.leakage_uA?.r2 ?? '--'}</strong></div>
+            <div className="model-info-item"><span>Delay Drift R2</span><strong>{modelMetrics.drift.delay_ns?.r2 ?? '--'}</strong></div>
+          </div>
+        )}
+      </section>
 
       <section className="analysis-section">
         <div className="panel-header">
@@ -94,7 +104,7 @@ function Explainability({ anomalyData: initialAnomalyData }) {
           <div>
             <span className="panel-label">GLOBAL FEATURE IMPORTANCE</span>
             <h2>What Influences Risk?</h2>
-            <p className="section-description">Features with higher importance contribute more strongly to the model's anomaly-risk assessment.</p>
+            <p className="section-description">Features with higher importance contribute more strongly to the loaded anomaly ensemble.</p>
           </div>
         </div>
         <div className="feature-importance-chart">
@@ -115,7 +125,7 @@ function Explainability({ anomalyData: initialAnomalyData }) {
           <div>
             <span className="panel-label">DRIFT MODEL</span>
             <h2>Drift-Model Feature Importance</h2>
-            <p className="section-description">These features influence the model's estimation of component behaviour and drift over the projection horizon.</p>
+            <p className="section-description">These are the actual features used by the loaded IDDQ drift predictor.</p>
           </div>
         </div>
         <div className="feature-importance-chart">

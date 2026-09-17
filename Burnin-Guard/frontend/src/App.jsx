@@ -22,6 +22,25 @@ function App() {
     anomaly_rate: '0%',
   })
   const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+
+  const syncInvestigationQueue = useCallback((duts) => {
+    const flaggedDuts = duts.filter((dut) =>
+      dut.predicted_outcome === 'FAIL' || ['HIGH', 'CRITICAL'].includes(dut.risk_band)
+    )
+    setInvestigationQueue((currentQueue) => flaggedDuts.map((dut) => {
+      const existing = currentQueue.find((item) => item.dutId === dut.dut_id)
+      return {
+        dutId: dut.dut_id,
+        lotId: dut.lot_id,
+        risk: dut.risk_band || 'LOW',
+        score: Number(dut.anomaly_score ?? dut.anomaly_ensemble_score ?? dut.risk_score ?? 0).toFixed(2),
+        flaggedAt: existing?.flaggedAt || new Date().toLocaleString(),
+        status: existing?.status || 'Under Investigation',
+      }
+    }))
+  }, [])
 
   const fetchDashboardData = useCallback(async () => {
     try {
@@ -31,18 +50,50 @@ function App() {
       ])
       const duts = dutsData.duts || []
       setAnomalyData(duts)
+      syncInvestigationQueue(duts)
       setStats(statsData)
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [syncInvestigationQueue])
+
+  const handleCsvUpload = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setUploading(true)
+    setUploadError('')
+    try {
+      const results = await api.predictCsv(file)
+      setAnomalyData(results)
+      syncInvestigationQueue(results)
+      const total = results.length
+      const highRisk = results.filter((item) => ['HIGH', 'CRITICAL'].includes(item.risk_band)).length
+      const failures = results.filter((item) => item.predicted_outcome === 'FAIL').length
+      setStats({
+        total_components: total,
+        anomalies_detected: highRisk,
+        high_risk_components: highRisk,
+        anomaly_rate: total ? `${((highRisk / total) * 100).toFixed(2)}%` : '0%',
+        pass_rate: total ? `${(((total - failures) / total) * 100).toFixed(2)}%` : '0%',
+      })
+      setCurrentPage('dashboard')
+    } catch (err) {
+      setUploadError(err.message || 'CSV prediction failed')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   useEffect(() => {
-    fetchDashboardData()
+    const initialLoad = setTimeout(fetchDashboardData, 0)
     const interval = setInterval(fetchDashboardData, 30000)
-    return () => clearInterval(interval)
+    return () => {
+      clearTimeout(initialLoad)
+      clearInterval(interval)
+    }
   }, [fetchDashboardData])
 
   const markForInvestigation = () => {
@@ -91,8 +142,10 @@ function App() {
     dutId: d.dut_id,
     lotId: d.lot_id,
     checkpoint: `${d.checkpoint_h || 168}h`,
-    score: d.anomaly_score
-      ? (typeof d.anomaly_score === 'number' ? d.anomaly_score.toFixed(2) : d.anomaly_score)
+    score: (d.anomaly_score ?? d.anomaly_ensemble_score)
+      ? (typeof (d.anomaly_score ?? d.anomaly_ensemble_score) === 'number'
+        ? (d.anomaly_score ?? d.anomaly_ensemble_score).toFixed(2)
+        : (d.anomaly_score ?? d.anomaly_ensemble_score))
       : '0.00',
     risk: d.risk_band || 'LOW',
     status: d.predicted_outcome === 'FAIL' ? 'Anomaly' : 'Normal',
@@ -101,6 +154,7 @@ function App() {
     iddq: d.iddq_uA ? `${d.iddq_uA} μA` : '--',
     leakage: d.leakage_uA ? `${d.leakage_uA} μA` : '--',
     delay: d.delay_ns ? `${d.delay_ns} ns` : '--',
+    explanation: d.explanation || 'No explanation available',
   }))
 
   return (
@@ -120,7 +174,14 @@ function App() {
           <a href="#" className={currentPage === "explainability" ? "active" : ""} onClick={(e) => { e.preventDefault(); setCurrentPage("explainability") }}>Explainability</a>
           <a href="#" className={currentPage === "audit-log" ? "active" : ""} onClick={(e) => { e.preventDefault(); setCurrentPage("audit-log") }}>Audit Log</a>
         </nav>
-        <div className="sidebar-footer"><span>QA ENGINEER</span></div>
+        <div className="sidebar-footer">
+          <input id="csv-upload" type="file" accept=".csv,text/csv" onChange={handleCsvUpload} hidden />
+          <label className="csv-upload-button" htmlFor="csv-upload">
+            <span>{uploading ? 'PROCESSING CSV...' : 'IMPORT INPUT CSV'}</span>
+          </label>
+          {uploadError && <p className="upload-error" role="alert">{uploadError}</p>}
+          <span>QA ENGINEER</span>
+        </div>
       </aside>
       <main className="main-content">
         {currentPage === "anomaly-analysis" ? (
@@ -221,7 +282,7 @@ function App() {
                             <td>{anomaly.score}</td>
                             <td><span className={`risk-badge ${anomaly.risk.toLowerCase()}`}>{anomaly.risk}</span></td>
                             <td><span className="status-badge">{anomaly.status}</span></td>
-                            <td><button className="view-button" onClick={() => setSelectedAnomaly(anomaly)}>View</button></td>
+                            <td><button className="view-button" onClick={() => { setSelectedQueueItem(null); setSelectedAnomaly(anomaly); }}>View</button></td>
                           </tr>
                         ))}
                       </tbody>
@@ -287,7 +348,7 @@ function App() {
               </div>
               <div className="explanation-section">
                 <span className="panel-label">AI EXPLANATION</span>
-                <p>The component was flagged because its observed telemetry deviates from the expected burn-in behaviour.</p>
+                <p>{selectedAnomaly.explanation}</p>
               </div>
               <div className="action-section">
                 <span className="panel-label">INVESTIGATION STATUS</span>

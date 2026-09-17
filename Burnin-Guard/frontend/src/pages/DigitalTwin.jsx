@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { api } from "../api";
 
 const PARAMS = ["iddq", "leakage", "delay"];
 const LIMITS = { iddq: 60, leakage: 15, delay: 18 };
@@ -14,16 +13,19 @@ const defaultProjections = {
   IC0288: { iddq: "43.5 μA", leakage: "8.9 μA", delay: "12.7 ns", margin: "16.7%" },
 };
 
-function generateParameterData(parameter) {
+function generateParameterData(parameter, dut) {
   const data = [];
   const limits = { iddq: 60, leakage: 15, delay: 18 };
+  const source = { iddq: "iddq_uA", leakage: "leakage_uA", delay: "delay_ns" }[parameter];
+  const start = Number(dut?.[source] || { iddq: 30, leakage: 4, delay: 9.5 }[parameter]);
+  const target = Number(dut?.[`${source}_projected_500h`] || start);
+  const predictedAt168 = Number(dut?.[`${source}_pred_168h`] || start + (target - start) * 0.336);
   for (let h = 0; h <= 500; h += 24) {
-    const base = { iddq: 30, leakage: 4, delay: 9.5 }[parameter];
-    const slope = { iddq: 0.25, leakage: 0.05, delay: 0.04 }[parameter];
-    const measured = h <= 168 ? base + (h / 168) * slope * 1.2 + Math.random() * 0.5 : null;
-    const predicted = base + slope * h + Math.random() * 0.3;
-    const upper = predicted + 2;
-    const lower = predicted - 2;
+    const measured = h <= 168 ? start + (predictedAt168 - start) * (h / 168) : null;
+    const predicted = start + (target - start) * (h / 500);
+    const interval = Math.max(Math.abs(target - start) * 0.08, 0.05);
+    const upper = predicted + interval;
+    const lower = predicted - interval;
     data.push({ hour: h, measured, predicted, lower, upper, limit: limits[parameter] });
   }
   return data;
@@ -33,32 +35,22 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
   const [selectedDut, setSelectedDut] = useState("IC0060");
   const [isDutOpen, setIsDutOpen] = useState(false);
   const [selectedParameter, setSelectedParameter] = useState("iddq");
-  const [dutProjections, setDutProjections] = useState(defaultProjections);
-  const [dutList, setDutList] = useState([]);
-
-  useEffect(() => {
-    if (initialAnomalyData && initialAnomalyData.length > 0) {
-      const list = initialAnomalyData.slice(0, 6).map((d) => d.dut_id);
-      setDutList(list);
-      const projections = {};
-      list.forEach((id) => {
-        const d = initialAnomalyData.find((a) => a.dut_id === id);
-        projections[id] = {
-          iddq: d.iddq_uA ? `${d.iddq_uA} μA` : '42.8 μA',
-          leakage: d.leakage_uA ? `${d.leakage_uA} μA` : '8.6 μA',
-          delay: d.delay_ns ? `${d.delay_ns} ns` : '12.4 ns',
-          margin: d.risk_confidence_pct ? `${d.risk_confidence_pct}%` : '18.4%',
-        };
-      });
-      setDutProjections(projections);
-    }
-  }, [initialAnomalyData]);
-
-  const selectedProjection = dutProjections[selectedDut] || defaultProjections[selectedDut];
-  const parameterData = generateParameterData(selectedParameter);
+  const dutList = (initialAnomalyData || []).map((d) => d.dut_id);
+  const dutProjections = (initialAnomalyData || []).reduce((projections, d) => ({
+    ...projections,
+    [d.dut_id]: {
+      iddq: d.iddq_uA_projected_500h ? `${Number(d.iddq_uA_projected_500h).toFixed(2)} μA` : '42.8 μA',
+      leakage: d.leakage_uA_projected_500h ? `${Number(d.leakage_uA_projected_500h).toFixed(2)} μA` : '8.6 μA',
+      delay: d.delay_ns_projected_500h ? `${Number(d.delay_ns_projected_500h).toFixed(2)} ns` : '12.4 ns',
+      margin: d.iddq_uA_margin_pct_500h ? `${Number(d.iddq_uA_margin_pct_500h).toFixed(1)}%` : '18.4%',
+    },
+  }), {});
+  const dutOptions = dutList.length > 0 ? dutList : Object.keys(defaultProjections);
+  const activeDut = dutOptions.includes(selectedDut) ? selectedDut : dutOptions[0];
+  const selectedDutData = (initialAnomalyData || []).find((dut) => dut.dut_id === activeDut);
+  const selectedProjection = dutProjections[activeDut] || defaultProjections[activeDut];
+  const parameterData = generateParameterData(selectedParameter, selectedDutData);
   const driftData = parameterData.map((point) => ({ ...point, confidenceBand: point.upper - point.lower }));
-
-  const dutOptions = dutList.length > 0 ? dutList : ["IC0060", "IC0075", "IC0201", "IC0211", "IC0042", "IC0288"];
 
   return (
     <div className="analysis-page">
@@ -73,20 +65,20 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
           <div>
             <span className="panel-label">COMPONENT SELECTION</span>
             <h2>Select DUT for Projection</h2>
-            <span className="selected-dut-indicator">Active component: {selectedDut}</span>
+            <span className="selected-dut-indicator">Active component: {activeDut}</span>
           </div>
         </div>
         <div className="dut-selector">
           <label htmlFor="dut-select">Select DUT</label>
           <div className="custom-dut-select">
             <button type="button" className="custom-dut-trigger" onClick={() => setIsDutOpen(!isDutOpen)}>
-              <span>{selectedDut}</span>
+              <span>{activeDut}</span>
               <span className={`dut-arrow ${isDutOpen ? "open" : ""}`}>▾</span>
             </button>
             {isDutOpen && (
               <div className="custom-dut-options">
                 {dutOptions.map((dut) => (
-                  <button key={dut} type="button" className={selectedDut === dut ? "selected" : ""} onClick={() => { setSelectedDut(dut); setIsDutOpen(false); }}>{dut}</button>
+                  <button key={dut} type="button" className={activeDut === dut ? "selected" : ""} onClick={() => { setSelectedDut(dut); setIsDutOpen(false); }}>{dut}</button>
                 ))}
               </div>
             )}
@@ -94,7 +86,7 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
         </div>
       </section>
 
-      <section className="analysis-section">
+      <section className="analysis-section parameter-trends-section">
         <div className="panel-header">
           <div><span className="panel-label">DRIFT PREDICTION</span><h2>Parameter Trends</h2></div>
         </div>
@@ -148,7 +140,7 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
           <div>
             <span className="panel-label">DIGITAL TWIN PROJECTION</span>
             <h2>Projected Behaviour Beyond Burn-in</h2>
-            <span className="projection-dut-label">Digital Twin: {selectedDut}</span>
+            <span className="projection-dut-label">Digital Twin: {activeDut}</span>
           </div>
         </div>
         <div className="projection-gauges">

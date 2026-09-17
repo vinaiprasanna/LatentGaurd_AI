@@ -3,7 +3,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 function AnomalyChart({ anomalyData: propData }) {
   const data = (propData || []).map((d, i) => ({
     hour: `${(i + 1) * 24}h`,
-    anomalies: d.risk_score ? Math.round(d.risk_score / 5) : Math.floor(Math.random() * 10) + 3,
+    anomalies: d.risk_score ? Math.round(d.risk_score / 5) : (i % 8) + 3,
   }));
 
   if (data.length === 0) {

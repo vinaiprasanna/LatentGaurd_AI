@@ -3,17 +3,9 @@ import { api } from "../api";
 import RiskHeatmap from "../components/RiskHeatmap";
 
 function AnomalyAnalysis({ anomalyData: initialAnomalyData }) {
-  const [selectedLots, setSelectedLots] = useState([
-    "LOT2026A", "LOT2026B", "LOT2026C", "LOT2026D", "LOT2026E", "LOT2026G",
-  ]);
+  const [selectedLots, setSelectedLots] = useState([]);
   const [selectedRisks, setSelectedRisks] = useState(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
   const [dutData, setDutData] = useState(initialAnomalyData || []);
-
-  useEffect(() => {
-    if (initialAnomalyData) {
-      setDutData(initialAnomalyData);
-    }
-  }, [initialAnomalyData]);
 
   const loadFromApi = async () => {
     try {
@@ -24,10 +16,18 @@ function AnomalyAnalysis({ anomalyData: initialAnomalyData }) {
     }
   };
 
-  useEffect(() => { loadFromApi() }, []);
+  useEffect(() => {
+    let active = true;
+    api.getDuts()
+      .then((data) => {
+        if (active) setDutData(data.duts || []);
+      })
+      .catch((err) => console.error('Failed to load DUT data:', err));
+    return () => { active = false; };
+  }, []);
 
   const filteredDutData = dutData.filter(
-    (dut) => selectedLots.includes(dut.lot_id) && selectedRisks.includes(dut.risk_band)
+    (dut) => (selectedLots.length === 0 || selectedLots.includes(dut.lot_id)) && selectedRisks.includes(dut.risk_band)
   );
 
   const lotOptions = [...new Set(dutData.map((d) => d.lot_id))];
@@ -48,7 +48,7 @@ function AnomalyAnalysis({ anomalyData: initialAnomalyData }) {
           <span className="filter-label">Filter by lot</span>
           <div className="filter-options">
             {lotOptions.map((lot) => (
-              <button key={lot} className={`filter-chip ${selectedLots.includes(lot) ? "active" : ""}`} onClick={() => { setSelectedLots((current) => current.includes(lot) ? current.filter((item) => item !== lot) : [...current, lot]); }}>{lot} ×</button>
+              <button key={lot} className={`filter-chip ${selectedLots.length === 0 || selectedLots.includes(lot) ? "active" : ""}`} onClick={() => { setSelectedLots((current) => current.length === 0 ? lotOptions.filter((item) => item !== lot) : current.includes(lot) ? current.filter((item) => item !== lot) : [...current, lot]); }}>{lot} ×</button>
             ))}
           </div>
         </div>

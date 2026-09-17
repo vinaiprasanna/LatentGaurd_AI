@@ -119,6 +119,38 @@ box-shadow: inset 0 0 20px rgba(54, 169, 255, 0.06);
   letter-spacing: 1.5px;
 }
 
+.csv-upload-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  border: 1px solid rgba(54, 169, 255, 0.55);
+  border-radius: 8px;
+  color: #74c9ff;
+  background: rgba(38, 112, 170, 0.16);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  transition: 0.2s;
+}
+
+.csv-upload-button:hover {
+  color: #eff9ff;
+  background: rgba(38, 150, 220, 0.3);
+  box-shadow: 0 0 18px rgba(54, 169, 255, 0.16);
+}
+
+.upload-error {
+  margin: -8px 0 14px;
+  color: #ff8b98;
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
 /* =========================
    MAIN CONTENT
 ========================= */
@@ -1424,6 +1456,16 @@ overflow: hidden;
 .analysis-page {
   width: 100%;
   padding: 4px 0 30px;
+  display: flex;
+  flex-direction: column;
+}
+
+.digital-twin-projection-section {
+  order: 1;
+}
+
+.parameter-trends-section {
+  order: 2;
 }
 
 .analysis-page-header {

@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
 async function fetchJson(url, options = {}) {
   const response = await fetch(`${API_BASE}${url}`, {
@@ -24,6 +24,10 @@ export const api = {
     return fetchJson('/api/dashboard/stats');
   },
 
+  getModelMetrics() {
+    return fetchJson('/api/model-metrics');
+  },
+
   getAuditLog() {
     return fetchJson('/api/audit-log');
   },
@@ -36,7 +40,14 @@ export const api = {
       body: formData,
     });
     if (!response.ok) {
-      throw new Error(`Prediction failed: ${response.status}`);
+      let message = `Prediction failed: ${response.status}`;
+      try {
+        const body = await response.json();
+        message = body.detail || message;
+      } catch {
+        // Keep the status message when the server response is not JSON.
+      }
+      throw new Error(message);
     }
     return response.json();
   },

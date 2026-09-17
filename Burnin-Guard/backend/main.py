@@ -9,6 +9,7 @@ import sys
 import pickle
 import pandas as pd
 import numpy as np
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_absolute_error, mean_squared_error, r2_score
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR = os.path.join(ROOT, "src")
@@ -36,6 +37,8 @@ def load_models():
 
 
 _models = load_models()
+_active_results = None
+_model_metrics = None
 
 # ---------------------------------------------------------------------------
 # Prediction logic
@@ -100,6 +103,83 @@ def run_prediction(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     return dut_df
+
+
+def _get_model_metrics():
+    """Return cached training-set diagnostics for the loaded artifacts."""
+    global _model_metrics
+    if _model_metrics is not None:
+        return _model_metrics
+    if _models[0] is None or _models[1] is None:
+        return {"model_loaded": False}
+
+    training_path = os.path.join(ROOT, "..", "model-training", "data", "large_physics_calibrated_burnin_dataset.csv")
+    if not os.path.exists(training_path):
+        return {"model_loaded": True, "metrics_available": False, "message": "Training dataset is unavailable"}
+
+    raw_df = pd.read_csv(training_path)
+    dut_df = build_dut_features(raw_df)
+    feature_cols = get_model_feature_columns(dut_df)
+    X = dut_df[feature_cols].fillna(0).values
+    ensemble, drift_models = _models
+    scores = ensemble.score(X)
+
+    metrics = {
+        "model_loaded": True,
+        "metrics_available": True,
+        "evaluation_scope": "training dataset diagnostics; not a held-out validation score",
+        "training_rows": int(len(raw_df)),
+        "training_duts": int(len(dut_df)),
+        "feature_count": len(feature_cols),
+        "feature_columns": feature_cols,
+        "anomaly": {
+            "ensemble_mean_score": round(float(scores["anomaly_ensemble_score"].mean()), 4),
+        },
+        "drift": {},
+        "anomaly_feature_importance": [],
+        "drift_feature_importance": {},
+    }
+
+    if "true_latent_defect" in dut_df.columns:
+        y_true = np.asarray(dut_df["true_latent_defect"].to_numpy(dtype=int))
+        y_pred = np.asarray((scores["anomaly_ensemble_score"] >= 0.5).astype(int))
+        metrics["anomaly"].update({
+            "accuracy": round(float(accuracy_score(y_true, y_pred)), 4),
+            "precision": round(float(precision_score(y_true, y_pred, zero_division=0)), 4),
+            "recall": round(float(recall_score(y_true, y_pred, zero_division=0)), 4),
+            "f1": round(float(f1_score(y_true, y_pred, zero_division=0)), 4),
+        })
+
+    anomaly_importance = (
+        ensemble.weights["xgboost"] * ensemble.xgb_model.feature_importances_
+        + ensemble.weights["random_forest"] * ensemble.rf_model.feature_importances_
+    )
+    importance_total = float(anomaly_importance.sum())
+    if importance_total:
+        anomaly_importance = anomaly_importance / importance_total
+    metrics["anomaly_feature_importance"] = [
+        {"feature": name, "importance": round(float(value), 4)}
+        for name, value in sorted(zip(feature_cols, anomaly_importance), key=lambda item: -item[1])[:12]
+    ]
+
+    early_feature_cols = [c for c in feature_cols if "_0h" in c or "physics_norm_slope" in c
+                          or "arrhenius" in c or "temperature" in c or "_lot_zscore" in c]
+    Xp = dut_df[early_feature_cols].fillna(0).values
+    for parameter, model in drift_models.items():
+        target = np.asarray(dut_df[f"{parameter}_last"].to_numpy(dtype=float))
+        prediction = np.asarray(model.predict(Xp)[f"{parameter}_pred_168h"])
+        metrics["drift"][parameter] = {
+            "mae": round(float(mean_absolute_error(target, prediction)), 4),
+            "rmse": round(float(np.sqrt(mean_squared_error(target, prediction))), 4),
+            "r2": round(float(r2_score(target, prediction)), 4),
+        }
+        metrics["drift_feature_importance"][parameter] = [
+            {"feature": name, "importance": round(float(value), 4)}
+            for name, value in list(model.feature_importances(early_feature_cols).items())[:12]
+        ]
+
+    _model_metrics = metrics
+    return metrics
 
 
 def build_sample_dut_data():
@@ -190,6 +270,12 @@ def status():
     }
 
 
+@app.get("/api/model-metrics")
+def get_model_metrics():
+    """Expose loaded model diagnostics and feature importance for the UI."""
+    return _get_model_metrics()
+
+
 @app.get("/api/duts")
 def get_duts():
     """Get all DUT data with risk scores for the dashboard."""
@@ -209,16 +295,43 @@ def get_dut(dut_id: str):
 
 def _get_all_duts():
     """Run prediction on sample data and return all DUT results."""
+    if _active_results is not None:
+        return _active_results.to_dict(orient="records")
     sample_df = pd.read_csv("prediction_input.csv")
     results = run_prediction(sample_df)
+    results = _attach_dashboard_telemetry(results, sample_df)
     output_cols = [
         "dut_id", "lot_id", "risk_score", "risk_band",
         "risk_confidence_pct", "predicted_outcome", "explanation",
         "anomaly_ensemble_score", "temperature_c", "iddq_uA",
-        "leakage_uA", "delay_ns"
+        "leakage_uA", "delay_ns", "iddq_uA_pred_168h", "iddq_uA_pred_168h_lo",
+        "iddq_uA_pred_168h_hi", "leakage_uA_pred_168h", "leakage_uA_pred_168h_lo",
+        "leakage_uA_pred_168h_hi", "delay_ns_pred_168h", "delay_ns_pred_168h_lo",
+        "delay_ns_pred_168h_hi", "iddq_uA_projected_500h", "iddq_uA_margin_pct_500h",
+        "leakage_uA_projected_500h", "leakage_uA_margin_pct_500h", "delay_ns_projected_500h",
+        "delay_ns_margin_pct_500h"
     ]
     available_cols = [c for c in output_cols if c in results.columns]
     return results[available_cols].to_dict(orient="records")
+
+
+def _attach_dashboard_telemetry(results: pd.DataFrame, raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Add the latest raw telemetry fields consumed by dashboard views."""
+    telemetry_cols = [
+        "dut_id", "checkpoint_h", "temperature_c", "vcc_v",
+        "iddq_uA", "leakage_uA", "delay_ns",
+    ]
+    available_cols = [column for column in telemetry_cols if column in raw_df.columns]
+    latest = (
+        raw_df.sort_values("checkpoint_h")
+        .groupby("dut_id", as_index=False)
+        .tail(1)[available_cols]
+    )
+    result_without_telemetry = results.drop(
+        columns=[column for column in available_cols if column != "dut_id" and column in results.columns],
+        errors="ignore",
+    )
+    return result_without_telemetry.merge(latest, on="dut_id", how="left")
 
 
 def _get_dut_data(dut_id: str):
@@ -267,8 +380,9 @@ def _get_sample_dut(dut_id: str):
     return {"dut_id": dut_id, "error": "Not found"}
 
 
-@app.post("/predict", response_model=List[PredictionResponse])
+@app.post("/predict", response_model=List[Dict[str, Any]])
 def predict(file: UploadFile = File(...)):
+    global _active_results
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
 
@@ -282,15 +396,25 @@ def predict(file: UploadFile = File(...)):
 
     try:
         results = run_prediction(df)
+        results = _attach_dashboard_telemetry(results, df)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
     output_cols = [
         "dut_id", "lot_id", "risk_score", "risk_band",
-        "risk_confidence_pct", "predicted_outcome", "explanation"
+        "risk_confidence_pct", "predicted_outcome", "explanation",
+        "anomaly_ensemble_score", "anomaly_score", "checkpoint_h",
+        "temperature_c", "vcc_v", "iddq_uA", "leakage_uA", "delay_ns",
+        "iddq_uA_pred_168h", "iddq_uA_pred_168h_lo", "iddq_uA_pred_168h_hi",
+        "leakage_uA_pred_168h", "leakage_uA_pred_168h_lo", "leakage_uA_pred_168h_hi",
+        "delay_ns_pred_168h", "delay_ns_pred_168h_lo", "delay_ns_pred_168h_hi",
+        "iddq_uA_projected_500h", "iddq_uA_margin_pct_500h",
+        "leakage_uA_projected_500h", "leakage_uA_margin_pct_500h",
+        "delay_ns_projected_500h", "delay_ns_margin_pct_500h"
     ]
     available_cols = [c for c in output_cols if c in results.columns]
     output = results[available_cols]
+    _active_results = output.copy()
 
     return output.to_dict(orient="records")
 
@@ -310,12 +434,15 @@ def predict_batch(file: UploadFile = File(...)):
 
     try:
         results = run_prediction(df)
+        results = _attach_dashboard_telemetry(results, df)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
     output_cols = [
         "dut_id", "lot_id", "risk_score", "risk_band",
-        "risk_confidence_pct", "predicted_outcome", "explanation"
+        "risk_confidence_pct", "predicted_outcome", "explanation",
+        "iddq_uA_pred_168h", "leakage_uA_pred_168h", "delay_ns_pred_168h",
+        "iddq_uA_projected_500h", "leakage_uA_projected_500h", "delay_ns_projected_500h"
     ]
     available_cols = [c for c in output_cols if c in results.columns]
     output = results[available_cols]
@@ -335,6 +462,19 @@ def predict_batch(file: UploadFile = File(...)):
 @app.get("/api/dashboard/stats")
 def get_dashboard_stats():
     """Get dashboard KPI statistics."""
+    if _active_results is not None:
+        all_duts = _active_results.to_dict(orient="records")
+        total = len(all_duts)
+        fail_count = sum(1 for d in all_duts if d.get("predicted_outcome") == "FAIL")
+        high_risk = sum(1 for d in all_duts if d.get("risk_band") in ("HIGH", "CRITICAL"))
+        return {
+            "total_components": total,
+            "anomalies_detected": high_risk,
+            "high_risk_components": high_risk,
+            "anomaly_rate": f"{(high_risk / total * 100):.2f}%" if total else "0%",
+            "pass_rate": f"{((total - fail_count) / total * 100):.2f}%" if total else "0%",
+            "model_loaded": True,
+        }
     if _models is None:
         return {
             "total_components": 1248,
