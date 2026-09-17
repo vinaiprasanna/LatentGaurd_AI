@@ -344,7 +344,8 @@ def _get_all_duts():
         "leakage_uA_pred_168h_hi", "delay_ns_pred_168h", "delay_ns_pred_168h_lo",
         "delay_ns_pred_168h_hi", "iddq_uA_projected_500h", "iddq_uA_margin_pct_500h",
         "leakage_uA_projected_500h", "leakage_uA_margin_pct_500h", "delay_ns_projected_500h",
-        "delay_ns_margin_pct_500h"
+        "delay_ns_margin_pct_500h",
+        "_component_anomaly", "_component_lot_deviation", "_component_drift_rate", "_component_future_margin"
     ]
     available_cols = [c for c in output_cols if c in results.columns]
     return results[available_cols].to_dict(orient="records")
@@ -445,7 +446,8 @@ def predict(file: UploadFile = File(...)):
         "delay_ns_pred_168h", "delay_ns_pred_168h_lo", "delay_ns_pred_168h_hi",
         "iddq_uA_projected_500h", "iddq_uA_margin_pct_500h",
         "leakage_uA_projected_500h", "leakage_uA_margin_pct_500h",
-        "delay_ns_projected_500h", "delay_ns_margin_pct_500h"
+        "delay_ns_projected_500h", "delay_ns_margin_pct_500h",
+        "_component_anomaly", "_component_lot_deviation", "_component_drift_rate", "_component_future_margin"
     ]
     available_cols = [c for c in output_cols if c in results.columns]
     output = results[available_cols]
@@ -477,7 +479,8 @@ def predict_batch(file: UploadFile = File(...)):
         "dut_id", "lot_id", "risk_score", "risk_band",
         "risk_confidence_pct", "predicted_outcome", "explanation",
         "iddq_uA_pred_168h", "leakage_uA_pred_168h", "delay_ns_pred_168h",
-        "iddq_uA_projected_500h", "leakage_uA_projected_500h", "delay_ns_projected_500h"
+        "iddq_uA_projected_500h", "leakage_uA_projected_500h", "delay_ns_margin_pct_500h",
+        "_component_anomaly", "_component_lot_deviation", "_component_drift_rate", "_component_future_margin"
     ]
     available_cols = [c for c in output_cols if c in results.columns]
     output = results[available_cols]
@@ -551,14 +554,18 @@ def get_audit_log():
             "confidence_pct": dut["risk_confidence_pct"],
             "explanation": dut["explanation"],
             "model_version": "BG-AI-2.0",
+            "_component_anomaly": dut.get("_component_anomaly"),
+            "_component_lot_deviation": dut.get("_component_lot_deviation"),
+            "_component_drift_rate": dut.get("_component_drift_rate"),
+            "_component_future_margin": dut.get("_component_future_margin"),
         })
     return {"entries": entries}
 
 
 def _get_sample_audit_log():
     return [
-        {"timestamp": "2026-09-16 09:42", "dut_id": "IC0060", "lot_id": "LOT2026B", "risk_band": "CRITICAL", "risk_score": 87.3, "confidence_pct": 0, "explanation": "Predicted value approaching safety limit", "model_version": "BG-AI-2.0"},
-        {"timestamp": "2026-09-16 09:38", "dut_id": "IC0075", "lot_id": "LOT2026B", "risk_band": "CRITICAL", "risk_score": 87.2, "confidence_pct": 0, "explanation": "Predicted value approaching safety limit", "model_version": "BG-AI-2.0"},
-        {"timestamp": "2026-09-16 09:34", "dut_id": "IC0201", "lot_id": "LOT2026E", "risk_band": "CRITICAL", "risk_score": 82.1, "confidence_pct": 0, "explanation": "Significant deviation from lot population", "model_version": "BG-AI-2.0"},
-        {"timestamp": "2026-09-16 09:30", "dut_id": "IC0042", "lot_id": "LOT2026A", "risk_band": "HIGH", "risk_score": 77.7, "confidence_pct": 32.5, "explanation": "High physics-normalised drift rate", "model_version": "BG-AI-2.0"},
+        {"timestamp": "2026-09-16 09:42", "dut_id": "IC0060", "lot_id": "LOT2026B", "risk_band": "CRITICAL", "risk_score": 87.3, "confidence_pct": 0, "explanation": "Predicted value approaching safety limit", "model_version": "BG-AI-2.0", "_component_anomaly": 0.85, "_component_lot_deviation": 0.32, "_component_drift_rate": 0.67, "_component_future_margin": 0.12},
+        {"timestamp": "2026-09-16 09:38", "dut_id": "IC0075", "lot_id": "LOT2026B", "risk_band": "CRITICAL", "risk_score": 87.2, "confidence_pct": 0, "explanation": "Predicted value approaching safety limit", "model_version": "BG-AI-2.0", "_component_anomaly": 0.82, "_component_lot_deviation": 0.28, "_component_drift_rate": 0.71, "_component_future_margin": 0.15},
+        {"timestamp": "2026-09-16 09:34", "dut_id": "IC0201", "lot_id": "LOT2026E", "risk_band": "CRITICAL", "risk_score": 82.1, "confidence_pct": 0, "explanation": "Significant deviation from lot population", "model_version": "BG-AI-2.0", "_component_anomaly": 0.78, "_component_lot_deviation": 0.45, "_component_drift_rate": 0.53, "_component_future_margin": 0.08},
+        {"timestamp": "2026-09-16 09:30", "dut_id": "IC0042", "lot_id": "LOT2026A", "risk_band": "HIGH", "risk_score": 77.7, "confidence_pct": 32.5, "explanation": "High physics-normalised drift rate", "model_version": "BG-AI-2.0", "_component_anomaly": 0.65, "_component_lot_deviation": 0.21, "_component_drift_rate": 0.79, "_component_future_margin": 0.22},
     ]

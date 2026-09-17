@@ -15,18 +15,15 @@ const defaultProjections = {
 
 function generateParameterData(parameter, dut) {
   const data = [];
-  const limits = { iddq: 60, leakage: 15, delay: 18 };
   const source = { iddq: "iddq_uA", leakage: "leakage_uA", delay: "delay_ns" }[parameter];
   const start = Number(dut?.[source] || { iddq: 30, leakage: 4, delay: 9.5 }[parameter]);
   const target = Number(dut?.[`${source}_projected_500h`] || start);
   const predictedAt168 = Number(dut?.[`${source}_pred_168h`] || start + (target - start) * 0.336);
-  for (let h = 0; h <= 500; h += 24) {
-    const measured = h <= 168 ? start + (predictedAt168 - start) * (h / 168) : null;
-    const predicted = start + (target - start) * (h / 500);
+  for (let hour = 0; hour <= 500; hour += 24) {
+    const measured = hour <= 168 ? start + (predictedAt168 - start) * (hour / 168) : null;
+    const predicted = start + (target - start) * (hour / 500);
     const interval = Math.max(Math.abs(target - start) * 0.08, 0.05);
-    const upper = predicted + interval;
-    const lower = predicted - interval;
-    data.push({ hour: h, measured, predicted, lower, upper, limit: limits[parameter] });
+    data.push({ hour, measured, predicted, lower: predicted - interval, upper: predicted + interval, limit: LIMITS[parameter] });
   }
   return data;
 }
@@ -39,10 +36,10 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
   const dutProjections = (initialAnomalyData || []).reduce((projections, d) => ({
     ...projections,
     [d.dut_id]: {
-      iddq: d.iddq_uA_projected_500h ? `${Number(d.iddq_uA_projected_500h).toFixed(2)} μA` : '42.8 μA',
-      leakage: d.leakage_uA_projected_500h ? `${Number(d.leakage_uA_projected_500h).toFixed(2)} μA` : '8.6 μA',
-      delay: d.delay_ns_projected_500h ? `${Number(d.delay_ns_projected_500h).toFixed(2)} ns` : '12.4 ns',
-      margin: d.iddq_uA_margin_pct_500h ? `${Number(d.iddq_uA_margin_pct_500h).toFixed(1)}%` : '18.4%',
+      iddq: d.iddq_uA_projected_500h !== undefined ? `${Number(d.iddq_uA_projected_500h).toFixed(2)} μA` : 'N/A',
+      leakage: d.leakage_uA_projected_500h !== undefined ? `${Number(d.leakage_uA_projected_500h).toFixed(2)} μA` : 'N/A',
+      delay: d.delay_ns_projected_500h !== undefined ? `${Number(d.delay_ns_projected_500h).toFixed(2)} ns` : 'N/A',
+      margin: d.iddq_uA_margin_pct_500h !== undefined ? `${Number(d.iddq_uA_margin_pct_500h).toFixed(1)}%` : 'N/A',
     },
   }), {});
   const dutOptions = dutList.length > 0 ? dutList : Object.keys(defaultProjections);
@@ -145,7 +142,9 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
         </div>
         <div className="projection-gauges">
           {PARAMS.map((param) => {
-            const val = parseFloat(selectedProjection[param === "iddq" ? "iddq" : param === "leakage" ? "leakage" : "delay"].replace(/[^\d.]/g, ""));
+            const val = selectedProjection[param === "iddq" ? "iddq" : param === "leakage" ? "leakage" : "delay"] !== "N/A"
+        ? parseFloat(selectedProjection[param === "iddq" ? "iddq" : param === "leakage" ? "leakage" : "delay"].replace(/[^\d.]/g, ""))
+        : 0;
             const limit = LIMITS[param];
             return (
               <div className="projection-card" key={param}>

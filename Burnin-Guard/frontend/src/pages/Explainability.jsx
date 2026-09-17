@@ -25,6 +25,10 @@ function Explainability({ anomalyData: initialAnomalyData }) {
           riskBand: d.risk_band,
           confidence: d.risk_confidence_pct,
           explanation: d.explanation,
+          _component_anomaly: d._component_anomaly ?? 0,
+          _component_lot_deviation: d._component_lot_deviation ?? 0,
+          _component_drift_rate: d._component_drift_rate ?? 0,
+          _component_future_margin: d._component_future_margin ?? 0,
           features: globalFeatureImportance.slice(0, 3).map((feature) => ({
             name: feature.feature,
             contribution: feature.importance,
@@ -94,6 +98,21 @@ function Explainability({ anomalyData: initialAnomalyData }) {
                   ))}
                 </div>
               </div>
+              <div className="component-contributions">
+                  <span className="feature-contributions-title">Component contributions</span>
+                  <div className="component-contribution" style={{ width: `${component._component_anomaly * 100}%` }} title="Anomaly Ensemble">
+                    <strong>{(component._component_anomaly * 100).toFixed(1)}%</strong>
+                  </div>
+                  <div className="component-contribution" style={{ width: `${component._component_lot_deviation * 100}%` }} title="Lot Deviation">
+                    <strong>{(component._component_lot_deviation * 100).toFixed(1)}%</strong>
+                  </div>
+                  <div className="component-contribution" style={{ width: `${component._component_drift_rate * 100}%` }} title="Drift Rate">
+                    <strong>{(component._component_drift_rate * 100).toFixed(1)}%</strong>
+                  </div>
+                  <div className="component-contribution" style={{ width: `${component._component_future_margin * 100}%` }} title="Future Margin">
+                    <strong>{(component._component_future_margin * 100).toFixed(1)}%</strong>
+                  </div>
+                </div>
             </div>
           ))}
         </div>
