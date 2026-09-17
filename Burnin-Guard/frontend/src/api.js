@@ -32,6 +32,13 @@ export const api = {
     return fetchJson('/api/audit-log');
   },
 
+  askCosmo(question, history = []) {
+    return fetchJson('/api/chat', {
+      method: 'POST',
+      body: JSON.stringify({ question, history }),
+    });
+  },
+
   async predictCsv(file) {
     const formData = new FormData();
     formData.append('file', file);

@@ -21,6 +21,7 @@ from explainability import explain_row
 from digital_twin import project_trajectory, remaining_margin
 from data_generator import STATIC_LIMITS
 from risk_engine import compute_risk
+from failure_chatbot import answer_question
 
 ANOMALY_MODEL_PATH = os.path.join(MODELS_DIR, "anomaly_ensemble_model.pkl")
 DRIFT_MODEL_PATH = os.path.join(MODELS_DIR, "drift_model.pkl")
@@ -255,6 +256,12 @@ class DutData(BaseModel):
     delay_ns: float
 
 
+class ChatRequest(BaseModel):
+    question: str
+    dut_id: Optional[str] = None
+    history: Optional[List[Dict[str, Any]]] = None
+
+
 @app.get("/health")
 def health():
     return {"status": "healthy", "model_loaded": _models is not None}
@@ -274,6 +281,34 @@ def status():
 def get_model_metrics():
     """Expose loaded model diagnostics and feature importance for the UI."""
     return _get_model_metrics()
+
+
+@app.post("/api/chat")
+def chat_with_cosmo(request: ChatRequest):
+    """Answer a read-only COSMO question using the current prediction results."""
+    if _models is None:
+        raise HTTPException(status_code=503, detail="Trained models are not available")
+
+    try:
+        records = _get_all_duts()
+        results = pd.DataFrame(records)
+        if results.empty:
+            raise HTTPException(status_code=404, detail="No prediction results are available")
+
+        selected = results.iloc[0]
+        if request.dut_id and request.dut_id in results["dut_id"].astype(str).values:
+            selected = results[results["dut_id"].astype(str) == request.dut_id].iloc[0]
+        response = answer_question(
+            request.question,
+            selected,
+            results=results,
+            chat_history=request.history or [],
+        )
+        return {"assistant": "COSMO", "answer": response, "dut_id": selected.get("dut_id")}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"COSMO could not answer: {exc}")
 
 
 @app.get("/api/duts")

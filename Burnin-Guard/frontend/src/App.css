@@ -152,6 +152,237 @@ box-shadow: inset 0 0 20px rgba(54, 169, 255, 0.06);
 }
 
 /* =========================
+   COSMO ASSISTANT
+========================= */
+
+.cosmo-assistant {
+  position: fixed;
+  right: 26px;
+  bottom: 26px;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.cosmo-launcher {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  padding: 0;
+  border: 1px solid rgba(91, 202, 255, 0.8);
+  border-radius: 50%;
+  color: #e7f8ff;
+  background: radial-gradient(circle at 35% 30%, #2e98c8, #0b253d 66%, #06121f);
+  cursor: pointer;
+  box-shadow: 0 0 0 5px rgba(45, 159, 211, 0.08), 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 24px rgba(54, 169, 255, 0.3);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.cosmo-launcher:hover {
+  transform: translateY(-3px) scale(1.04);
+  box-shadow: 0 0 0 7px rgba(45, 159, 211, 0.1), 0 14px 34px rgba(0, 0, 0, 0.5), 0 0 32px rgba(54, 169, 255, 0.5);
+}
+
+.cosmo-mark {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin: auto;
+  border: 1px solid rgba(209, 244, 255, 0.78);
+  border-radius: 50%;
+  color: #f5fdff;
+  background: rgba(9, 31, 49, 0.72);
+  font-size: 20px;
+  text-shadow: 0 0 12px #8de2ff;
+}
+
+.cosmo-mark.small {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  font-size: 15px;
+}
+
+.cosmo-orbit {
+  position: absolute;
+  inset: 9px 2px;
+  border: 1px solid rgba(160, 231, 255, 0.7);
+  border-radius: 50%;
+  transform: rotate(35deg);
+}
+
+.orbit-two {
+  inset: 2px 9px;
+  transform: rotate(-35deg);
+  border-color: rgba(255, 185, 91, 0.7);
+}
+
+.cosmo-panel {
+  width: min(380px, calc(100vw - 32px));
+  height: min(560px, calc(100vh - 120px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(120, 215, 255, 0.35);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(14, 39, 60, 0.97), rgba(3, 14, 27, 0.98));
+  box-shadow: 0 24px 65px rgba(0, 0, 0, 0.55), 0 0 30px rgba(54, 169, 255, 0.12);
+  backdrop-filter: blur(18px);
+}
+
+.cosmo-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 15px;
+  border-bottom: 1px solid rgba(150, 210, 240, 0.14);
+}
+
+.cosmo-header div:nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cosmo-header strong {
+  color: #e9faff;
+  letter-spacing: 1.5px;
+  font-size: 12px;
+}
+
+.cosmo-header span {
+  color: #7eabc1;
+  font-size: 9px;
+}
+
+.cosmo-close {
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  border: 1px solid rgba(150, 210, 240, 0.2);
+  border-radius: 6px;
+  color: #a9c9d9;
+  background: rgba(5, 18, 31, 0.65);
+  cursor: pointer;
+  font-size: 19px;
+}
+
+.cosmo-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+
+.cosmo-message {
+  max-width: 90%;
+  padding: 10px 12px;
+  border: 1px solid rgba(150, 210, 240, 0.12);
+  border-radius: 10px;
+  color: #cde5f0;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.cosmo-message.assistant {
+  align-self: flex-start;
+  background: rgba(20, 67, 92, 0.42);
+}
+
+.cosmo-message.user {
+  align-self: flex-end;
+  color: #effaff;
+  background: rgba(34, 112, 153, 0.5);
+}
+
+.cosmo-suggestions {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0 14px 10px;
+}
+
+.cosmo-suggestions button {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border: 1px solid rgba(95, 193, 234, 0.28);
+  border-radius: 6px;
+  color: #9fd9ef;
+  background: rgba(17, 61, 84, 0.45);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.cosmo-suggestions button:hover {
+  color: #fff;
+  background: rgba(28, 112, 151, 0.55);
+}
+
+.cosmo-error {
+  margin: 0 14px 8px;
+  color: #ff9aa6;
+  font-size: 11px;
+}
+
+.cosmo-form {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid rgba(150, 210, 240, 0.14);
+}
+
+.cosmo-form input {
+  min-width: 0;
+  flex: 1;
+  padding: 10px 11px;
+  border: 1px solid rgba(150, 210, 240, 0.22);
+  border-radius: 7px;
+  outline: none;
+  color: #eafaff;
+  background: rgba(2, 12, 22, 0.72);
+  font-size: 12px;
+}
+
+.cosmo-form input:focus {
+  border-color: rgba(93, 202, 255, 0.8);
+}
+
+.cosmo-form button {
+  width: 38px;
+  border: 1px solid #4fbbe8;
+  border-radius: 7px;
+  color: white;
+  background: #176b91;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.cosmo-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@media (max-width: 700px) {
+  .cosmo-assistant {
+    right: 14px;
+    bottom: 14px;
+  }
+
+  .cosmo-panel {
+    height: min(520px, calc(100vh - 100px));
+  }
+}
+
+/* =========================
    MAIN CONTENT
 ========================= */
 

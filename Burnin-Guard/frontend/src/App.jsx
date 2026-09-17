@@ -8,6 +8,7 @@ import AnomalyAnalysis from './pages/AnomalyAnalysis'
 import DigitalTwin from './pages/DigitalTwin'
 import Explainability from './pages/Explainability'
 import AuditLog from './pages/AuditLog'
+import CosmoAssistant from './components/CosmoAssistant'
 
 function App() {
   const [selectedAnomaly, setSelectedAnomaly] = useState(null)
@@ -365,6 +366,7 @@ function App() {
           </div>
         )}
       </main>
+      <CosmoAssistant anomalyData={anomalyData} />
     </div>
   )
 }
