@@ -14,7 +14,7 @@ SRC_DIR = os.path.join(ROOT, "src")
 MODELS_DIR = os.path.join(ROOT, "models")
 sys.path.insert(0, SRC_DIR)
 
-from features import build_dut_features, get_model_feature_columns, PARAMS
+from features import build_dut_features, get_model_feature_columns, PARAMS, get_drift_input_rows
 from explainability import explain_row
 from digital_twin import project_trajectory, remaining_margin
 from data_generator import STATIC_LIMITS
@@ -61,15 +61,17 @@ def predict(input_csv=None, output_csv=None):
     for k, v in scores.items():
         dut_df[k] = v
 
-    # Drift predictions
-    early_feature_cols = [c for c in feature_cols if "_0h" in c or "physics_norm_slope" in c
+    # Drift predictions: only the early burn-in signal set is valid as input.
+    drift_input_df = build_dut_features(get_drift_input_rows(input_df))
+    drift_feature_cols = get_model_feature_columns(drift_input_df)
+    early_feature_cols = [c for c in drift_feature_cols if "_0h" in c or "physics_norm_slope" in c
                            or "arrhenius" in c or "temperature" in c or "_lot_zscore" in c]
     for p in PARAMS:
         target_col = f"{p}_last"
         if target_col not in dut_df.columns:
             continue
         y_drift = dut_df[target_col].values
-        Xp = dut_df[early_feature_cols].fillna(0).values
+        Xp = drift_input_df[early_feature_cols].fillna(0).values
         preds = drift_models[p].predict(Xp)
         for k, v in preds.items():
             dut_df[k] = v
