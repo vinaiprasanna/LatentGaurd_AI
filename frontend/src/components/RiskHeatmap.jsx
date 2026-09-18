@@ -18,9 +18,9 @@ function RiskHeatmap({ anomalyData: propData }) {
   const [hoveredCell, setHoveredCell] = useState(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
 
-  const checkpoints = ["0h", "24h", "48h", "72h", "96h", "120h", "144h", "168h"];
+  const checkpoints = ["0h", "24h", "96h", "168h"];
 
-  const data = (propData || []).slice(0, 12);
+  const data = propData || [];
 
   const getComponentScore = (component, index) => {
     const rawScore = Number(component.risk_score);
@@ -47,10 +47,18 @@ function RiskHeatmap({ anomalyData: propData }) {
                 return (
                   <div key={cellId} className="heatmap-cell"
                     style={{
-                      background: `linear-gradient(135deg, ${getRiskColor(score)}55, ${getRiskColor(score)}22)`,
-                      border: `1px solid ${getRiskColor(score)}66`,
-                      boxShadow: `inset 0 1px 0 rgba(255,255,255,0.30), inset 0 -10px 18px rgba(0,0,0,0.12), 0 0 14px ${getRiskColor(score)}35`,
-                    }}
+  background: `linear-gradient(
+    135deg,
+    ${getRiskColor(score)}aa,
+    ${getRiskColor(score)}66
+  )`,
+  border: `1px solid ${getRiskColor(score)}dd`,
+  boxShadow: `
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -10px 18px rgba(0, 0, 0, 0.16),
+    0 0 12px ${getRiskColor(score)}45
+  `,
+}}
                     onMouseEnter={(event) => {
                       setHoveredCell({ dutId: component.dut_id || component.dutId, checkpoint, score: riskScore, risk: getRiskLevel(riskScore / 100) });
                       const container = event.currentTarget.closest(".heatmap-container");
