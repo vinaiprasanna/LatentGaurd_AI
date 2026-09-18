@@ -474,10 +474,12 @@ def answer_question(question, row, results=None, chat_history=None, raw_data=Non
 
     greetings = {"hi", "hello", "hey", "hii", "helo", "good morning", "good afternoon", "good evening"}
     if q in greetings or q in {"hi cosmo", "hello cosmo", "hey cosmo"}:
-        return "Hello! I’m **COSMO**, your BurnInGuard AI assistant.\n\nI can analyze DUTs, compare components, find risky devices, check 500h projections, summarize lots, and generate reports."
+        return ("Hello! I’m **COSMO**, your BurnInGuard AI assistant.\n\n"
+                "I can analyze DUTs, compare components, find risky devices, report drift prediction accuracy, check 500h digital-twin projections, summarize lots, and generate reports.")
 
     if not q:
-        return "Ask COSMO to **analyze a DUT**, **compare DUTs**, **find risky DUTs**, **check 500h**, or **summarize the fleet**."
+        return ("Ask COSMO to **analyze a DUT**, **compare DUTs**, **find risky DUTs**, **review drift accuracy**, "
+                "**check 500h projections**, or **summarize the fleet**.")
 
     missing_id = _requested_id_not_found(question, results)
     if missing_id:
@@ -645,4 +647,4 @@ def answer_question(question, row, results=None, chat_history=None, raw_data=Non
         return explain_dut(row)
 
     return ("I can perform these tasks: **analyze a DUT**, **compare two DUTs**, **find the highest-risk DUT**, "
-            "**list risky DUTs**, **analyze lots**, **summarize the fleet**, or **check 500h projections**.")
+            "**list risky DUTs**, **review drift accuracy**, **analyze lots**, **summarize the fleet**, or **check 500h projections**.")

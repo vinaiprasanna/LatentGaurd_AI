@@ -408,8 +408,8 @@ def chat_with_cosmo(request: ChatRequest):
         if request.dut_id and request.dut_id in results["dut_id"].astype(str).values:
             selected = results[results["dut_id"].astype(str) == request.dut_id].iloc[0]
         raw_data = _active_raw_data
-        if raw_data is None and os.path.exists("prediction_input.csv"):
-            raw_data = pd.read_csv("prediction_input.csv")
+        if raw_data is None:
+            raise HTTPException(status_code=404, detail="No uploaded CSV data is available for COSMO analysis.")
         response = answer_question(
             request.question,
             selected,
@@ -427,42 +427,45 @@ def chat_with_cosmo(request: ChatRequest):
 
 @app.get("/api/duts")
 def get_duts():
-    """Get all DUT data with risk scores for the dashboard."""
-    if _models is None:
-        # Return sample data if models not loaded
-        return {"duts": _get_sample_duts(), "model_loaded": False}
-    return {"duts": _get_all_duts(), "model_loaded": True}
+    """Get all uploaded DUT results for the dashboard."""
+    duts = _get_all_duts()
+    return {"duts": duts, "model_loaded": bool(_models) and bool(duts)}
 
 
 @app.get("/api/duts/{dut_id}")
 def get_dut(dut_id: str):
-    """Get individual DUT data and digital twin projection."""
-    if _models is None:
-        return {"dut": _get_sample_dut(dut_id), "model_loaded": False}
-    return {"dut": _get_dut_data(dut_id), "model_loaded": True}
+    """Get individual uploaded DUT data and digital twin projection."""
+    duts = _get_all_duts()
+    for dut in duts:
+        if dut["dut_id"] == dut_id:
+            return {"dut": dut, "model_loaded": bool(_models)}
+    return {"dut": {"dut_id": dut_id, "error": "Not found"}, "model_loaded": bool(_models)}
+
+
+def _load_prediction_input_if_available():
+    """Return a readable prediction CSV when present, else None."""
+    path = os.path.join(ROOT, "prediction_input.csv")
+    if not os.path.exists(path):
+        return None
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return None
+    if df.empty or not {"dut_id", "lot_id"}.intersection(df.columns):
+        return None
+    return df
+
+
+def _get_active_uploaded_results():
+    """Return only the currently uploaded prediction results; never read the repo-local CSV by default."""
+    return _active_results
 
 
 def _get_all_duts():
-    """Run prediction on sample data and return all DUT results."""
-    if _active_results is not None:
-        return _active_results.to_dict(orient="records")
-    sample_df = pd.read_csv("prediction_input.csv")
-    results = run_prediction(_inference_rows(sample_df))
-    results = _attach_dashboard_telemetry(results, sample_df)
-    output_cols = [
-        "dut_id", "lot_id", "risk_score", "risk_band",
-        "risk_confidence_pct", "predicted_outcome", "explanation",
-        "anomaly_ensemble_score", "temperature_c", "iddq_uA",
-        "leakage_uA", "delay_ns", "iddq_uA_pred_168h", "iddq_uA_pred_168h_lo",
-        "iddq_uA_pred_168h_hi", "leakage_uA_pred_168h", "leakage_uA_pred_168h_lo",
-        "leakage_uA_pred_168h_hi", "delay_ns_pred_168h", "delay_ns_pred_168h_lo",
-        "delay_ns_pred_168h_hi", "iddq_uA_projected_500h", "iddq_uA_margin_pct_500h",
-        "leakage_uA_projected_500h", "leakage_uA_margin_pct_500h", "delay_ns_projected_500h",
-        "delay_ns_margin_pct_500h",
-        "_component_anomaly", "_component_lot_deviation", "_component_drift_rate", "_component_future_margin"
-    ]
-    available_cols = [c for c in output_cols if c in results.columns]
-    return results[available_cols].to_dict(orient="records")
+    """Return only the uploaded-data results for prediction and display."""
+    results = _get_active_uploaded_results()
+    if results is None:
+        return []
     return results.to_dict(orient="records")
 
 
@@ -637,40 +640,26 @@ def predict_batch(file: UploadFile = File(...)):
 
 @app.get("/api/dashboard/stats")
 def get_dashboard_stats():
-    """Get dashboard KPI statistics."""
-    if _active_results is not None:
-        all_duts = _active_results.to_dict(orient="records")
-        total = len(all_duts)
-        fail_count = sum(1 for d in all_duts if d.get("predicted_outcome") == "FAIL")
-        high_risk = sum(1 for d in all_duts if d.get("risk_band") in ("HIGH", "CRITICAL"))
-        return {
-            "total_components": total,
-            "anomalies_detected": high_risk,
-            "high_risk_components": high_risk,
-            "anomaly_rate": f"{(high_risk / total * 100):.2f}%" if total else "0%",
-            "pass_rate": f"{((total - fail_count) / total * 100):.2f}%" if total else "0%",
-            "model_loaded": True,
-        }
-    if _models is None:
-        return {
-            "total_components": 1248,
-            "anomalies_detected": 87,
-            "high_risk_components": 23,
-            "anomaly_rate": "6.97%",
-            "pass_rate": "93.03%",
-            "model_loaded": False,
-        }
+    """Return dashboard KPIs for uploaded results only."""
     all_duts = _get_all_duts()
     total = len(all_duts)
-    fail_count = sum(1 for d in all_duts if d["predicted_outcome"] == "FAIL")
-    pass_count = total - fail_count
-    high_risk = sum(1 for d in all_duts if d["risk_band"] in ("HIGH", "CRITICAL"))
+    if total == 0:
+        return {
+            "total_components": 0,
+            "anomalies_detected": 0,
+            "high_risk_components": 0,
+            "anomaly_rate": "0%",
+            "pass_rate": "0%",
+            "model_loaded": bool(_models),
+        }
+    fail_count = sum(1 for d in all_duts if d.get("predicted_outcome") == "FAIL")
+    high_risk = sum(1 for d in all_duts if d.get("risk_band") in ("HIGH", "CRITICAL"))
     return {
         "total_components": total,
         "anomalies_detected": high_risk,
         "high_risk_components": high_risk,
-        "anomaly_rate": f"{(high_risk/total*100):.2f}%" if total > 0 else "0%",
-        "pass_rate": f"{(pass_count/total*100):.2f}%" if total > 0 else "0%",
+        "anomaly_rate": f"{(high_risk / total * 100):.2f}%" if total else "0%",
+        "pass_rate": f"{((total - fail_count) / total * 100):.2f}%" if total else "0%",
         "model_loaded": True,
     }
 
