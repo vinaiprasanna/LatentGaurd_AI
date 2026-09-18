@@ -6,6 +6,28 @@ Physics-informed, explainable PASS/FAIL prediction for component burn-in screeni
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-2.0.0-green.svg)](CHANGELOG.md)
 
+
+## HOW TO RUN
+### Install Dependencies
+```bash
+scripts/install_dependencies.bat
+```
+### Train Models
+```bash
+scripts/train_models.bat
+```
+
+### RUN BACKEND (TERMINAL 1)
+```bash
+scripts/run_backend.bat
+```
+
+### RUN FRONTEND (TERMINAL 2)
+```bash
+scripts/run_frontend.bat
+```
+
+
 ## Table of Contents
 
 - [Overview](#overview)
