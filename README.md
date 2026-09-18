@@ -7,7 +7,7 @@ Physics-informed, explainable PASS/FAIL prediction for component burn-in screeni
 [![Version](https://img.shields.io/badge/Version-2.0.0-green.svg)](CHANGELOG.md)
 
 
-## HOW TO RUN
+## HOW TO RUN (USE MANUAL METHOD IF DOESNT WORK)
 ### Install Dependencies
 > Windows
 ```bash
@@ -152,7 +152,7 @@ cd ..
 npm install
 ```
 
-## Running the Application
+## Running the Application 
 
 ### Option A: Individual Processes (Recommended for Development)
 

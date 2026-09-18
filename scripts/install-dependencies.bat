@@ -10,11 +10,14 @@ if errorlevel 1 (
 cd ..
 
 echo Creating virtual environment...
-python -m venv .venv
+if not exist .venv (
+    python -m venv .venv
+)
 if errorlevel 1 (
     echo Virtual environment creation failed.
     exit /b 1
 )
+echo Virtual environment created.
 
 
 call .venv\Scripts\activate
