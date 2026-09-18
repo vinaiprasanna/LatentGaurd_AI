@@ -9,22 +9,43 @@ Physics-informed, explainable PASS/FAIL prediction for component burn-in screeni
 
 ## HOW TO RUN
 ### Install Dependencies
+> Windows
 ```bash
-scripts/install_dependencies.bat
+scripts/install-dependencies.bat
+```
+> Linux
+```bash
+source scripts/install-dependencies.sh
 ```
 ### Train Models
+> Windows
 ```bash
-scripts/train_models.bat
+scripts/train-models.bat
+```
+> Linux
+```bash
+source scripts/train-models.sh
 ```
 
 ### RUN BACKEND (TERMINAL 1)
+> Windows
 ```bash
-scripts/run_backend.bat
+scripts/run-backend.bat
+```
+> Linux
+```bash
+source scripts/run-backend.sh
 ```
 
+
 ### RUN FRONTEND (TERMINAL 2)
+> Windows
 ```bash
-scripts/run_frontend.bat
+scripts/run-frontend.bat
+```
+> Linux
+```bash
+source scripts/run-frontend.sh
 ```
 
 
