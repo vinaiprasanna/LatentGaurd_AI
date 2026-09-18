@@ -49,6 +49,10 @@ source scripts/run-frontend.sh
 ```
 
 
+- Frontend: **http://localhost:3000**
+- API: **http://localhost:8000**
+- API Docs: **http://localhost:8000/docs**
+
 ## Table of Contents
 
 - [Overview](#overview)
