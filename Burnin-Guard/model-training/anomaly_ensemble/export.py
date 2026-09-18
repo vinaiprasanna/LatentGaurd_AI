@@ -27,7 +27,8 @@ def export(data_path=None):
     else:
         raw_df = pd.read_csv(os.path.join(ROOT, "data", "large_physics_calibrated_burnin_dataset.csv"))
 
-    dut_df = build_dut_features(raw_df)
+    feature_input = raw_df[raw_df["checkpoint_h"] < 168].copy()
+    dut_df = build_dut_features(feature_input)
     feature_cols = get_model_feature_columns(dut_df)
 
     X = dut_df[feature_cols].fillna(0).values

@@ -28,7 +28,9 @@ def export(data_path=None):
 
     print(f"  {len(raw_df)} rows, {raw_df['dut_id'].nunique()} DUTs")
 
-    dut_df = build_dut_features(raw_df)
+    early_df = raw_df[raw_df["checkpoint_h"] < 168].copy()
+    dut_df = build_dut_features(early_df)
+    target_df = build_dut_features(raw_df)
     feature_cols = get_model_feature_columns(dut_df)
 
     early_feature_cols = [c for c in feature_cols if "_0h" in c or "physics_norm_slope" in c
@@ -38,7 +40,7 @@ def export(data_path=None):
     drift_models = {}
     for p in PARAMS:
         target_col = f"{p}_last"
-        y_drift = dut_df[target_col].values
+        y_drift = target_df[target_col].values
         Xp = dut_df[early_feature_cols].fillna(0).values
         model = DriftPredictor(p)
         model.fit(Xp, y_drift)

@@ -41,9 +41,9 @@ function Explainability({ anomalyData: initialAnomalyData }) {
       <section className="analysis-section model-metrics-section">
         <div className="panel-header">
           <div>
-            <span className="panel-label">MODEL VALIDATION</span>
+            <span className="panel-label">MODEL EVALUATION</span>
             <h2>Loaded Model Diagnostics</h2>
-            <p className="section-description">These diagnostics are calculated on the bundled training dataset. They are not held-out validation accuracy.</p>
+            <p className="section-description">These are in-sample training diagnostics. The current prediction CSV is inference input, not an independent labeled validation set.</p>
           </div>
         </div>
         {metricsError && <p className="upload-error">{metricsError}</p>}
@@ -51,12 +51,32 @@ function Explainability({ anomalyData: initialAnomalyData }) {
           <div className="model-metrics-grid">
             <div className="model-info-item"><span>Features Used</span><strong>{modelMetrics.feature_count}</strong></div>
             <div className="model-info-item"><span>Training DUTs</span><strong>{modelMetrics.training_duts}</strong></div>
-            <div className="model-info-item"><span>Anomaly Accuracy</span><strong>{(modelMetrics.anomaly.accuracy * 100).toFixed(1)}%</strong></div>
-            <div className="model-info-item"><span>Anomaly F1</span><strong>{(modelMetrics.anomaly.f1 * 100).toFixed(1)}%</strong></div>
+            <div className="model-info-item"><span>Training Accuracy</span><strong>{modelMetrics.anomaly.accuracy != null ? `${(modelMetrics.anomaly.accuracy * 100).toFixed(1)}%` : '--'}</strong></div>
+            <div className="model-info-item"><span>Training F1</span><strong>{modelMetrics.anomaly.f1 != null ? `${(modelMetrics.anomaly.f1 * 100).toFixed(1)}%` : '--'}</strong></div>
             <div className="model-info-item"><span>IDDQ Drift R2</span><strong>{modelMetrics.drift.iddq_uA?.r2 ?? '--'}</strong></div>
             <div className="model-info-item"><span>Leakage Drift R2</span><strong>{modelMetrics.drift.leakage_uA?.r2 ?? '--'}</strong></div>
             <div className="model-info-item"><span>Delay Drift R2</span><strong>{modelMetrics.drift.delay_ns?.r2 ?? '--'}</strong></div>
           </div>
+        )}
+        {modelMetrics?.prediction_input && <p className="section-description model-evaluation-note">Prediction file: {modelMetrics.prediction_input.dut_count} DUTs, {modelMetrics.prediction_input.overlap_with_training_duts} overlap with training IDs. Validation accuracy is unavailable because the file has no labels.</p>}
+        {modelMetrics?.test?.available ? (
+          <div className="model-test-results">
+            <p className="section-description">Uploaded test evaluation: {modelMetrics.test.test_duts} DUTs. Model weights were not retrained on this file.</p>
+            {modelMetrics.test.anomaly_metrics_available && <div className="model-metrics-grid">
+              <div className="model-info-item"><span>Test Accuracy</span><strong>{(modelMetrics.test.accuracy * 100).toFixed(1)}%</strong></div>
+              <div className="model-info-item"><span>Test Precision</span><strong>{(modelMetrics.test.precision * 100).toFixed(1)}%</strong></div>
+              <div className="model-info-item"><span>Test Recall</span><strong>{(modelMetrics.test.recall * 100).toFixed(1)}%</strong></div>
+              <div className="model-info-item"><span>Test F1</span><strong>{(modelMetrics.test.f1 * 100).toFixed(1)}%</strong></div>
+              <div className="model-info-item"><span>False-Negative Rate</span><strong>{(modelMetrics.test.false_negative_rate * 100).toFixed(1)}%</strong></div>
+            </div>}
+            {modelMetrics.test.drift_metrics_available && <div className="model-metrics-grid">
+              {['iddq_uA', 'leakage_uA', 'delay_ns'].map((parameter) => <div className="model-info-item" key={parameter}><span>{parameter} Test RMSE</span><strong>{modelMetrics.test.drift[parameter]?.rmse ?? '--'}</strong></div>)}
+            </div>}
+            <p className="section-description model-evaluation-note">Training DUT overlap: {modelMetrics.test.overlap_with_training_duts}. Independent test: {modelMetrics.test.is_independent_test ? 'yes' : 'no'}.</p>
+            {!modelMetrics.test.is_independent_test && <p className="section-description model-evaluation-note">Warning: some uploaded DUT IDs overlap with training data, so this is not a fully independent test.</p>}
+          </div>
+        ) : (
+          <p className="section-description model-evaluation-note">Upload a labeled test CSV containing `true_latent_defect` to calculate test accuracy, precision, recall, F1, and false-negative rate. Current uploads are prediction-only.</p>
         )}
       </section>
 

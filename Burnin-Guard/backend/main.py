@@ -22,6 +22,7 @@ from digital_twin import project_trajectory, remaining_margin
 from data_generator import STATIC_LIMITS
 from risk_engine import compute_risk
 from failure_chatbot import answer_question
+from data_cleaner import clean_and_validate
 
 ANOMALY_MODEL_PATH = os.path.join(MODELS_DIR, "anomaly_ensemble_model.pkl")
 DRIFT_MODEL_PATH = os.path.join(MODELS_DIR, "drift_model.pkl")
@@ -39,7 +40,10 @@ def load_models():
 
 _models = load_models()
 _active_results = None
+_active_raw_data = None
 _model_metrics = None
+_active_test_metrics = None
+_active_cleaning_report = None
 
 # ---------------------------------------------------------------------------
 # Prediction logic
@@ -106,11 +110,26 @@ def run_prediction(df: pd.DataFrame) -> pd.DataFrame:
     return dut_df
 
 
+def _inference_rows(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Exclude 168h target rows from inference when a labeled horizon is supplied."""
+    if "checkpoint_h" not in raw_df.columns:
+        return raw_df
+    checkpoints = set(pd.to_numeric(raw_df["checkpoint_h"], errors="coerce").dropna().astype(int))
+    if 168 in checkpoints and len(checkpoints) > 1:
+        early = raw_df[raw_df["checkpoint_h"] < 168].copy()
+        if not early.empty:
+            return early
+    return raw_df
+
+
 def _get_model_metrics():
     """Return cached training-set diagnostics for the loaded artifacts."""
     global _model_metrics
     if _model_metrics is not None:
-        return _model_metrics
+        metrics = dict(_model_metrics)
+        if _active_test_metrics is not None:
+            metrics["test"] = _active_test_metrics
+        return metrics
     if _models[0] is None or _models[1] is None:
         return {"model_loaded": False}
 
@@ -128,7 +147,9 @@ def _get_model_metrics():
     metrics = {
         "model_loaded": True,
         "metrics_available": True,
-        "evaluation_scope": "training dataset diagnostics; not a held-out validation score",
+        "evaluation_scope": "in-sample training diagnostics; not a held-out validation score",
+        "validation_available": False,
+        "validation_message": "No labeled held-out validation dataset is configured.",
         "training_rows": int(len(raw_df)),
         "training_duts": int(len(dut_df)),
         "feature_count": len(feature_cols),
@@ -140,6 +161,20 @@ def _get_model_metrics():
         "anomaly_feature_importance": [],
         "drift_feature_importance": {},
     }
+
+    prediction_path = os.path.join(ROOT, "prediction_input.csv")
+    if os.path.exists(prediction_path):
+        prediction_df = pd.read_csv(prediction_path, usecols=["dut_id"])
+        training_ids = set(raw_df["dut_id"].astype(str))
+        prediction_ids = set(prediction_df["dut_id"].astype(str))
+        metrics["prediction_input"] = {
+            "path": prediction_path,
+            "dut_count": len(prediction_ids),
+            "has_labels": False,
+            "overlap_with_training_duts": len(training_ids & prediction_ids),
+            "is_independent_validation": False,
+            "message": "This file is inference input, not an independent labeled test set.",
+        }
 
     if "true_latent_defect" in dut_df.columns:
         y_true = np.asarray(dut_df["true_latent_defect"].to_numpy(dtype=int))
@@ -180,6 +215,72 @@ def _get_model_metrics():
         ]
 
     _model_metrics = metrics
+    if _active_test_metrics is not None:
+        metrics["test"] = _active_test_metrics
+    return metrics
+
+
+def _evaluate_uploaded_test(results: pd.DataFrame, raw_df: pd.DataFrame):
+    """Evaluate uploaded test labels and 168h regression targets without retraining."""
+    training_path = os.path.join(ROOT, "..", "model-training", "data", "large_physics_calibrated_burnin_dataset.csv")
+    training_ids = set(pd.read_csv(training_path, usecols=["dut_id"])["dut_id"].astype(str)) if os.path.exists(training_path) else set()
+    test_ids = set(raw_df["dut_id"].astype(str))
+    metrics = {
+        "available": False,
+        "evaluation_scope": "uploaded labeled test dataset; model weights were not retrained",
+        "test_rows": int(len(raw_df)),
+        "test_duts": int(raw_df["dut_id"].nunique()),
+        "has_labels": "true_latent_defect" in raw_df.columns,
+        "overlap_with_training_duts": int(len(training_ids & test_ids)),
+        "is_independent_test": len(training_ids & test_ids) == 0,
+    }
+    if "true_latent_defect" in raw_df.columns:
+        labels = raw_df[["dut_id", "true_latent_defect"]].drop_duplicates("dut_id")
+        evaluated = results.merge(labels, on="dut_id", how="inner", suffixes=("", "_input"))
+        if not evaluated.empty:
+            y_true = np.asarray(evaluated["true_latent_defect_input"].to_numpy(dtype=int))
+            y_pred = np.asarray((evaluated["anomaly_ensemble_score"].to_numpy(dtype=float) >= 0.5).astype(int))
+            metrics.update({
+                "available": True,
+                "anomaly_metrics_available": True,
+                "test_duts": int(len(evaluated)),
+                "accuracy": round(float(accuracy_score(y_true, y_pred)), 4),
+                "precision": round(float(precision_score(y_true, y_pred, zero_division=0)), 4),
+                "recall": round(float(recall_score(y_true, y_pred, zero_division=0)), 4),
+                "f1": round(float(f1_score(y_true, y_pred, zero_division=0)), 4),
+                "false_negative_count": int(((y_true == 1) & (y_pred == 0)).sum()),
+                "false_negative_rate": round(float(((y_true == 1) & (y_pred == 0)).sum() / max((y_true == 1).sum(), 1)), 4),
+            })
+    else:
+        metrics["message"] = "No true_latent_defect labels; classification metrics are unavailable."
+
+    complete = raw_df.groupby("dut_id")["checkpoint_h"].max()
+    complete_ids = set(complete[complete >= 168].index.astype(str))
+    drift_results = results[results["dut_id"].astype(str).isin(complete_ids)]
+    actual_168 = raw_df[raw_df["checkpoint_h"] == 168].sort_values("checkpoint_h").groupby("dut_id").tail(1)
+    actual_168 = actual_168.set_index(actual_168["dut_id"].astype(str)) if not actual_168.empty else actual_168
+    drift_metrics = {}
+    for parameter in PARAMS:
+        target_field = f"{parameter}_last"
+        prediction_field = f"{parameter}_pred_168h"
+        if target_field in drift_results and prediction_field in drift_results and not drift_results.empty:
+            prediction = drift_results.set_index(drift_results["dut_id"].astype(str))[prediction_field]
+            prediction = prediction[prediction.index.isin(actual_168.index)]
+            target = actual_168.loc[prediction.index, parameter].astype(float) if not actual_168.empty else pd.Series(dtype=float)
+            prediction = prediction.astype(float)
+            if target.empty:
+                continue
+            drift_metrics[parameter] = {
+                "mae": round(float(mean_absolute_error(target, prediction)), 4),
+                "rmse": round(float(np.sqrt(mean_squared_error(target, prediction))), 4),
+                "r2": round(float(r2_score(target, prediction)), 4),
+                "test_duts": int(len(drift_results)),
+            }
+    metrics["drift"] = drift_metrics
+    metrics["drift_metrics_available"] = bool(drift_metrics)
+    if not drift_metrics:
+        metrics["drift_message"] = "168h measured checkpoints are required to calculate drift test RMSE."
+    metrics["available"] = bool(metrics.get("anomaly_metrics_available") or drift_metrics)
     return metrics
 
 
@@ -283,6 +384,12 @@ def get_model_metrics():
     return _get_model_metrics()
 
 
+@app.get("/api/data-quality")
+def get_data_quality():
+    """Return the latest uploaded CSV cleaning report."""
+    return _active_cleaning_report or {"available": False, "message": "No CSV has been uploaded."}
+
+
 @app.post("/api/chat")
 def chat_with_cosmo(request: ChatRequest):
     """Answer a read-only COSMO question using the current prediction results."""
@@ -298,11 +405,16 @@ def chat_with_cosmo(request: ChatRequest):
         selected = results.iloc[0]
         if request.dut_id and request.dut_id in results["dut_id"].astype(str).values:
             selected = results[results["dut_id"].astype(str) == request.dut_id].iloc[0]
+        raw_data = _active_raw_data
+        if raw_data is None and os.path.exists("prediction_input.csv"):
+            raw_data = pd.read_csv("prediction_input.csv")
         response = answer_question(
             request.question,
             selected,
             results=results,
             chat_history=request.history or [],
+            raw_data=raw_data,
+            model_metrics=_get_model_metrics(),
         )
         return {"assistant": "COSMO", "answer": response, "dut_id": selected.get("dut_id")}
     except HTTPException:
@@ -333,21 +445,9 @@ def _get_all_duts():
     if _active_results is not None:
         return _active_results.to_dict(orient="records")
     sample_df = pd.read_csv("prediction_input.csv")
-    results = run_prediction(sample_df)
+    results = run_prediction(_inference_rows(sample_df))
     results = _attach_dashboard_telemetry(results, sample_df)
-    output_cols = [
-        "dut_id", "lot_id", "risk_score", "risk_band",
-        "risk_confidence_pct", "predicted_outcome", "explanation",
-        "anomaly_ensemble_score", "temperature_c", "iddq_uA",
-        "leakage_uA", "delay_ns", "iddq_uA_pred_168h", "iddq_uA_pred_168h_lo",
-        "iddq_uA_pred_168h_hi", "leakage_uA_pred_168h", "leakage_uA_pred_168h_lo",
-        "leakage_uA_pred_168h_hi", "delay_ns_pred_168h", "delay_ns_pred_168h_lo",
-        "delay_ns_pred_168h_hi", "iddq_uA_projected_500h", "iddq_uA_margin_pct_500h",
-        "leakage_uA_projected_500h", "leakage_uA_margin_pct_500h", "delay_ns_projected_500h",
-        "delay_ns_margin_pct_500h"
-    ]
-    available_cols = [c for c in output_cols if c in results.columns]
-    return results[available_cols].to_dict(orient="records")
+    return results.to_dict(orient="records")
 
 
 def _attach_dashboard_telemetry(results: pd.DataFrame, raw_df: pd.DataFrame) -> pd.DataFrame:
@@ -362,11 +462,14 @@ def _attach_dashboard_telemetry(results: pd.DataFrame, raw_df: pd.DataFrame) -> 
         .groupby("dut_id", as_index=False)
         .tail(1)[available_cols]
     )
+    quality_columns = [column for column in ["dut_id", "data_quality_abnormal", "data_quality_flags"] if column in raw_df.columns]
+    quality = raw_df[quality_columns].drop_duplicates("dut_id") if quality_columns else pd.DataFrame(columns=["dut_id"])
     result_without_telemetry = results.drop(
         columns=[column for column in available_cols if column != "dut_id" and column in results.columns],
         errors="ignore",
     )
-    return result_without_telemetry.merge(latest, on="dut_id", how="left")
+    enriched = result_without_telemetry.merge(latest, on="dut_id", how="left")
+    return enriched.merge(quality, on="dut_id", how="left")
 
 
 def _get_dut_data(dut_id: str):
@@ -417,7 +520,7 @@ def _get_sample_dut(dut_id: str):
 
 @app.post("/predict", response_model=List[Dict[str, Any]])
 def predict(file: UploadFile = File(...)):
-    global _active_results
+    global _active_results, _active_raw_data, _active_test_metrics, _active_cleaning_report
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
 
@@ -430,32 +533,28 @@ def predict(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="CSV file is empty")
 
     try:
-        results = run_prediction(df)
-        results = _attach_dashboard_telemetry(results, df)
+        cleaned_df, cleaning_report = clean_and_validate(df)
+        if cleaned_df.empty:
+            raise HTTPException(status_code=400, detail="CSV has no usable telemetry rows after cleaning")
+        results = run_prediction(_inference_rows(cleaned_df))
+        results = _attach_dashboard_telemetry(results, cleaned_df)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
-    output_cols = [
-        "dut_id", "lot_id", "risk_score", "risk_band",
-        "risk_confidence_pct", "predicted_outcome", "explanation",
-        "anomaly_ensemble_score", "anomaly_score", "checkpoint_h",
-        "temperature_c", "vcc_v", "iddq_uA", "leakage_uA", "delay_ns",
-        "iddq_uA_pred_168h", "iddq_uA_pred_168h_lo", "iddq_uA_pred_168h_hi",
-        "leakage_uA_pred_168h", "leakage_uA_pred_168h_lo", "leakage_uA_pred_168h_hi",
-        "delay_ns_pred_168h", "delay_ns_pred_168h_lo", "delay_ns_pred_168h_hi",
-        "iddq_uA_projected_500h", "iddq_uA_margin_pct_500h",
-        "leakage_uA_projected_500h", "leakage_uA_margin_pct_500h",
-        "delay_ns_projected_500h", "delay_ns_margin_pct_500h"
-    ]
-    available_cols = [c for c in output_cols if c in results.columns]
-    output = results[available_cols]
+    output = results
     _active_results = output.copy()
+    _active_raw_data = cleaned_df.copy()
+    _active_test_metrics = _evaluate_uploaded_test(output, cleaned_df)
+    _active_cleaning_report = cleaning_report.as_dict()
 
     return output.to_dict(orient="records")
 
 
 @app.post("/predict/batch")
 def predict_batch(file: UploadFile = File(...)):
+    global _active_results, _active_raw_data, _active_test_metrics, _active_cleaning_report
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
 
@@ -468,19 +567,21 @@ def predict_batch(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="CSV file is empty")
 
     try:
-        results = run_prediction(df)
-        results = _attach_dashboard_telemetry(results, df)
+        cleaned_df, cleaning_report = clean_and_validate(df)
+        if cleaned_df.empty:
+            raise HTTPException(status_code=400, detail="CSV has no usable telemetry rows after cleaning")
+        results = run_prediction(_inference_rows(cleaned_df))
+        results = _attach_dashboard_telemetry(results, cleaned_df)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
-    output_cols = [
-        "dut_id", "lot_id", "risk_score", "risk_band",
-        "risk_confidence_pct", "predicted_outcome", "explanation",
-        "iddq_uA_pred_168h", "leakage_uA_pred_168h", "delay_ns_pred_168h",
-        "iddq_uA_projected_500h", "leakage_uA_projected_500h", "delay_ns_projected_500h"
-    ]
-    available_cols = [c for c in output_cols if c in results.columns]
-    output = results[available_cols]
+    output = results
+    _active_results = output.copy()
+    _active_raw_data = cleaned_df.copy()
+    _active_test_metrics = _evaluate_uploaded_test(output, cleaned_df)
+    _active_cleaning_report = cleaning_report.as_dict()
 
     output_path = os.path.join(ROOT, "outputs", "prediction_output.csv")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

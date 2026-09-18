@@ -28,14 +28,18 @@ export const api = {
     return fetchJson('/api/model-metrics');
   },
 
+  getDataQuality() {
+    return fetchJson('/api/data-quality');
+  },
+
   getAuditLog() {
     return fetchJson('/api/audit-log');
   },
 
-  askCosmo(question, history = []) {
+  askCosmo(question, history = [], dutId = null) {
     return fetchJson('/api/chat', {
       method: 'POST',
-      body: JSON.stringify({ question, history }),
+      body: JSON.stringify({ question, history, dut_id: dutId }),
     });
   },
 

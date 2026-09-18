@@ -32,8 +32,9 @@ def train(data_path=None):
 
     print(f"  {len(raw_df)} rows, {raw_df['dut_id'].nunique()} DUTs")
 
-    print("Engineering features ...")
-    dut_df = build_dut_features(raw_df)
+    print("Engineering early-checkpoint features ...")
+    feature_input = raw_df[raw_df["checkpoint_h"] < 168].copy()
+    dut_df = build_dut_features(feature_input)
     feature_cols = get_model_feature_columns(dut_df)
     print(f"  {len(feature_cols)} feature columns")
 

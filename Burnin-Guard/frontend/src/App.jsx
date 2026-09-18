@@ -28,7 +28,7 @@ function App() {
 
   const syncInvestigationQueue = useCallback((duts) => {
     const flaggedDuts = duts.filter((dut) =>
-      dut.predicted_outcome === 'FAIL' || ['HIGH', 'CRITICAL'].includes(dut.risk_band)
+      dut.data_quality_abnormal || dut.predicted_outcome === 'FAIL' || ['HIGH', 'CRITICAL'].includes(dut.risk_band)
     )
     setInvestigationQueue((currentQueue) => flaggedDuts.map((dut) => {
       const existing = currentQueue.find((item) => item.dutId === dut.dut_id)
@@ -39,6 +39,7 @@ function App() {
         score: Number(dut.anomaly_score ?? dut.anomaly_ensemble_score ?? dut.risk_score ?? 0).toFixed(2),
         flaggedAt: existing?.flaggedAt || new Date().toLocaleString(),
         status: existing?.status || 'Under Investigation',
+        qualityFlags: dut.data_quality_flags || '',
       }
     }))
   }, [])
@@ -156,6 +157,7 @@ function App() {
     leakage: d.leakage_uA ? `${d.leakage_uA} μA` : '--',
     delay: d.delay_ns ? `${d.delay_ns} ns` : '--',
     explanation: d.explanation || 'No explanation available',
+    qualityFlags: d.data_quality_flags || '',
   }))
 
   return (
@@ -301,7 +303,7 @@ function App() {
                   <div className="queue-table-wrapper">
                     <table className="queue-table">
                       <thead>
-                        <tr><th>DUT ID</th><th>LOT ID</th><th>RISK</th><th>ANOMALY SCORE</th><th>FLAGGED AT</th><th>STATUS</th><th>ACTION</th></tr>
+                        <tr><th>DUT ID</th><th>LOT ID</th><th>RISK</th><th>ANOMALY SCORE</th><th>FLAGGED AT</th><th>STATUS</th><th>REASON</th><th>ACTION</th></tr>
                       </thead>
                       <tbody>
                         {investigationQueue.map((item) => (
@@ -310,6 +312,7 @@ function App() {
                             <td><span className={`risk-badge ${item.risk.toLowerCase()}`}>{item.risk}</span></td>
                             <td>{item.score}</td><td>{item.flaggedAt}</td>
                             <td><span className="queue-status">{item.status}</span></td>
+                            <td>{item.qualityFlags || 'Model risk flag'}</td>
                             <td><button className="review-button" onClick={() => { setSelectedQueueItem(item); const anomaly = anomalyDataWithRisk.find(a => a.dutId === item.dutId); setSelectedAnomaly(anomaly); }}>Review</button></td>
                           </tr>
                         ))}
