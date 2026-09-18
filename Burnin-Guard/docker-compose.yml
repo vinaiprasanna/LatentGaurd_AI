@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_LOAD=true
+    volumes:
+      - ./backend/models:/app/models
+      - ./backend/outputs:/app/outputs
+    depends_on:
+      - model-training
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  model-training:
+    build:
+      context: ./model-training
+      dockerfile: Dockerfile
+    volumes:
+      - ./model-training/data:/app/data
+      - ./backend/models:/app/backend/models
+    command: python -c "print('Model training service ready. Run training scripts manually.')"
+    profiles:
+      - training
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  backend_models:
+  backend_outputs:

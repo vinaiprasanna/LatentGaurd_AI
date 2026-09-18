@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/Burnin-Guard/backend/src",
+        "${workspaceFolder}/Burnin-Guard/model-training/src"
+    ]
+}
