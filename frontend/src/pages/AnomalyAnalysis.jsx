@@ -7,14 +7,6 @@ function AnomalyAnalysis({ anomalyData: initialAnomalyData }) {
   const [selectedRisks, setSelectedRisks] = useState(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
   const [dutData, setDutData] = useState(initialAnomalyData || []);
 
-  const loadFromApi = async () => {
-    try {
-      const data = await api.getDuts();
-      setDutData(data.duts || []);
-    } catch (err) {
-      console.error('Failed to load DUT data:', err);
-    }
-  };
 
   useEffect(() => {
     let active = true;
@@ -39,11 +31,16 @@ function AnomalyAnalysis({ anomalyData: initialAnomalyData }) {
         <h1>Anomaly Analysis</h1>
         <p>Live component risk assessment and anomaly detection</p>
       </div>
-      <div className="analysis-controls">
-        <div className="control-action">
-          <button className="regenerate-button" onClick={loadFromApi}>↻ Refresh Data</button>
-          <p className="data-disclaimer">Synthetic demonstration data only. Never present as real test data.</p>
+      
+
+      <section className="analysis-section heatmap-section">
+        <div className="panel-header">
+          <div><span className="panel-label">LIVE MONITORING</span><h2>Live Risk Heatmap</h2></div>
         </div>
+        <RiskHeatmap anomalyData={dutData} />
+      </section>
+<div className="analysis-controls">
+        
         <div className="filter-group">
           <span className="filter-label">Filter by lot</span>
           <div className="filter-options">
@@ -61,14 +58,6 @@ function AnomalyAnalysis({ anomalyData: initialAnomalyData }) {
           </div>
         </div>
       </div>
-
-      <section className="analysis-section heatmap-section">
-        <div className="panel-header">
-          <div><span className="panel-label">LIVE MONITORING</span><h2>Live Risk Heatmap</h2></div>
-        </div>
-        <RiskHeatmap anomalyData={dutData} />
-      </section>
-
       <section className="analysis-section">
         <div className="panel-header">
           <div>
