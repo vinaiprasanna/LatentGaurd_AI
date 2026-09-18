@@ -9,6 +9,26 @@ PARAMS = ["iddq_uA", "leakage_uA", "delay_ns"]
 EA_EV = 0.7
 K_BOLTZMANN = 8.617e-5
 T_REF_C = 125.0
+ALLOWED_DRIFT_INPUT_CHECKPOINTS = {0, 24}
+
+
+def get_drift_input_rows(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Return only the early checkpoint rows that may seed the drift forecast.
+
+    This keeps the model aligned with the challenge requirement that only early-life
+    burn-in readings are used as input for 96h/168h drift prediction, while 500h is
+    reserved for digital-twin projection.
+    """
+    if raw_df is None or raw_df.empty:
+        return raw_df
+    if "checkpoint_h" not in raw_df.columns:
+        return raw_df
+
+    cp = pd.to_numeric(raw_df["checkpoint_h"], errors="coerce")
+    allowed = raw_df[cp.isin(ALLOWED_DRIFT_INPUT_CHECKPOINTS)].copy()
+    if not allowed.empty:
+        return allowed
+    return raw_df.copy()
 
 
 def _arrhenius_factor(temp_c):

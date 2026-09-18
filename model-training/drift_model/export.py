@@ -13,7 +13,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 SRC_DIR = os.path.join(ROOT, "src")
 sys.path.insert(0, SRC_DIR)
 
-from features import build_dut_features, get_model_feature_columns, PARAMS
+from features import build_dut_features, get_model_feature_columns, PARAMS, get_drift_input_rows
 from drift_model import DriftPredictor
 
 BACKEND_MODELS = os.path.join(ROOT, "backend", "models")
@@ -28,7 +28,7 @@ def export(data_path=None):
 
     print(f"  {len(raw_df)} rows, {raw_df['dut_id'].nunique()} DUTs")
 
-    early_df = raw_df[raw_df["checkpoint_h"] < 168].copy()
+    early_df = get_drift_input_rows(raw_df)
     dut_df = build_dut_features(early_df)
     target_df = build_dut_features(raw_df)
     feature_cols = get_model_feature_columns(dut_df)

@@ -15,7 +15,7 @@ SRC_DIR = os.path.join(TRAINING_ROOT, "src")
 sys.path.insert(0, TRAINING_ROOT)
 sys.path.insert(0, SRC_DIR)
 
-from src.features import build_dut_features, get_model_feature_columns, PARAMS
+from src.features import build_dut_features, get_model_feature_columns, PARAMS, get_drift_input_rows
 from src.drift_model import DriftPredictor
 
 MODEL_PATH = os.path.join(REPO_ROOT, "backend", "models")
@@ -30,8 +30,8 @@ def train(data_path=None):
 
     print(f"  {len(raw_df)} rows, {raw_df['dut_id'].nunique()} DUTs")
 
-    print("Engineering early-checkpoint features ...")
-    early_df = raw_df[raw_df["checkpoint_h"] < 168].copy()
+    print("Engineering early-checkpoint features for the drift forecast ...")
+    early_df = get_drift_input_rows(raw_df)
     dut_df = build_dut_features(early_df)
     target_df = build_dut_features(raw_df)
     feature_cols = get_model_feature_columns(dut_df)
