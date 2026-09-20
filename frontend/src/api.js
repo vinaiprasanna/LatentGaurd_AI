@@ -36,6 +36,10 @@ export const api = {
     return fetchJson('/api/audit-log');
   },
 
+  getAuditLogExport() {
+    return fetchJson('/api/audit-log/export');
+  },
+
   getAuditJobs() {
     return fetchJson('/api/audit-jobs');
   },

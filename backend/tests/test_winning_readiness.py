@@ -161,3 +161,26 @@ def test_prediction_job_retention_caps_metadata_and_snapshots(monkeypatch, tmp_p
 
     assert len(main._load_audit_jobs()) == 100
     assert len(list((tmp_path / "jobs").glob("*.csv"))) == 100
+
+
+def test_explanation_names_parameter_level_evidence():
+    from explainability import build_driver_evidence, explain_row
+
+    row = {
+        "anomaly_ensemble_score": 0.62,
+        "iddq_uA_last": 42.0,
+        "iddq_uA_last_lot_zscore": 2.4,
+        "iddq_uA_physics_norm_slope": 0.031,
+        "iddq_uA_pred_168h_hi": 48.0,
+        "stage_a_flag": True,
+        "stage_a_robust_zscore_max": 4.1,
+    }
+
+    evidence = build_driver_evidence(row)
+    explanation = explain_row(row)
+
+    assert any(item["type"] == "lot_deviation" and item["parameter"] == "iddq_uA" for item in evidence)
+    assert any(item["type"] == "forecast_bound" and item["parameter"] == "iddq_uA" for item in evidence)
+    assert "upper forecast" in explanation
+    assert "Stage A" in explanation
+    assert "contribution" not in explanation

@@ -10,6 +10,7 @@ import CosmoAssistant from './components/CosmoAssistant'
 
 function App() {
   const [selectedAnomaly, setSelectedAnomaly] = useState(null)
+  const [inspectorSelection, setInspectorSelection] = useState(null)
   const [currentPage, setCurrentPage] = useState("dashboard")
   const [selectedQueueItem, setSelectedQueueItem] = useState(null)
   const [dashboardFilter, setDashboardFilter] = useState('ALL')
@@ -77,6 +78,7 @@ function App() {
     try {
       const results = await api.predictCsv(file)
       setAnomalyData(results)
+      setInspectorSelection(null)
       const [jobData, actionData] = await Promise.all([
         api.getAuditJobs(),
         api.getReviewActions(),
@@ -194,6 +196,7 @@ function App() {
     explanation: d.explanation || 'No explanation available',
     qualityFlags: d.data_quality_flags || '',
     evidence: d.evidence_chain || '',
+    driverEvidence: d.driver_evidence || [],
     recommendedTest: d.recommended_confirmation_test || '',
   }))
 
@@ -205,8 +208,8 @@ function App() {
     if (dashboardFilter === 'ANOMALY') return item.status === 'Anomaly'
     if (dashboardFilter === 'HIGH') return ['HIGH', 'CRITICAL'].includes(item.risk)
     return true
-  }).slice(0, 12)
-  const inspectorData = selectedAnomaly || priorityAnomaly || anomalyDataWithRisk[0]
+  })
+  const inspectorData = inspectorSelection || priorityAnomaly || anomalyDataWithRisk[0]
 
   return (
     <div className="dashboard" style={{ backgroundImage: `url(${spaceBackground})` }}>
@@ -290,16 +293,16 @@ function App() {
                 </section>
                 <section className="instrument-workspace">
                     <div className="instrument-stream-panel">
-                      <div className="instrument-panel-header"><div><span className="panel-label">LIVE ATE STREAM & INGESTION</span><h2>Component Screening Stream</h2></div><div className="stream-filters">{['ALL', 'ANOMALY', 'HIGH'].map((filter) => <button key={filter} className={dashboardFilter === filter ? 'active' : ''} onClick={() => setDashboardFilter(filter)}>{filter}</button>)}</div></div>
+                      <div className="instrument-panel-header"><div><span className="panel-label">LIVE ATE STREAM & INGESTION</span><h2>Component Screening Stream</h2><small className="stream-count">Showing {dashboardRows.length} of {anomalyDataWithRisk.length} components</small></div><div className="stream-filters">{['ALL', 'ANOMALY', 'HIGH'].map((filter) => <button key={filter} className={dashboardFilter === filter ? 'active' : ''} onClick={() => setDashboardFilter(filter)}>{filter}</button>)}</div></div>
                       <div className="instrument-table-wrap">
                         <table className="instrument-table"><thead><tr><th>Component ID</th><th>Lot Context</th><th>Checkpoint</th><th>Risk Score</th><th>Anomaly</th><th>Decision</th></tr></thead><tbody>
-                          {dashboardRows.map((item) => <tr key={item.dutId} onClick={() => { setSelectedQueueItem(null); setSelectedAnomaly(item); }}><td>{item.dutId}</td><td>{item.lotId}</td><td>{item.checkpoint}</td><td className={Number(item.score) >= 60 ? 'table-risk' : ''}>{item.score}</td><td>{item.status}</td><td><span className={`risk-badge ${item.risk.toLowerCase()}`}>{item.risk}</span></td></tr>)}
+                          {dashboardRows.map((item) => <tr key={item.dutId} className={inspectorData?.dutId === item.dutId ? 'selected-row' : ''} onClick={() => { setSelectedQueueItem(null); setInspectorSelection(item); }}><td>{item.dutId}</td><td>{item.lotId}</td><td>{item.checkpoint}</td><td className={Number(item.score) >= 60 ? 'table-risk' : ''}>{item.score}</td><td>{item.status}</td><td><span className={`risk-badge ${item.risk.toLowerCase()}`}>{item.risk}</span></td></tr>)}
                           {!dashboardRows.length && <tr><td colSpan={6}>Upload telemetry to activate the screening stream.</td></tr>}
                         </tbody></table>
                       </div>
                     </div>
                     <aside className="instrument-inspector">
-                      <div className="instrument-panel-header"><div><span className="panel-label">ACTIVE COMPONENT INSPECTOR</span><h2>{inspectorData ? inspectorData.dutId : 'No selection'}</h2></div></div>
+                      <div className="instrument-panel-header"><div><span className="panel-label">ACTIVE COMPONENT INSPECTOR</span><h2>{inspectorData ? inspectorData.dutId : 'No selection'}</h2><small className="stream-count">Click any stream row to inspect that component</small></div></div>
                       {inspectorData ? <><div className="inspector-identity"><span>Component ID</span><strong>{inspectorData.dutId}</strong><small>{inspectorData.lotId} · {inspectorData.checkpoint}</small></div><div className="inspector-metrics"><div><span>Risk Score</span><strong>{inspectorData.score}</strong></div><div><span>Risk Band</span><strong>{inspectorData.risk}</strong></div></div><div className="inspector-evidence"><span>Decision Evidence</span><p>{inspectorData.evidence || inspectorData.explanation}</p></div><div className="inspector-evidence action"><span>Recommended Action</span><p>{inspectorData.recommendedTest || 'Open the component investigation for confirmation guidance.'}</p></div><button className="inspector-action" onClick={() => setSelectedAnomaly(inspectorData)}>OPEN FULL INVESTIGATION</button></> : <div className="dashboard-empty-copy">No component is available for inspection.</div>}
                     </aside>
                   </section>

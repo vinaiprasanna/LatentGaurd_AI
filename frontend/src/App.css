@@ -19,6 +19,12 @@ a {
   display: flex;
   position: relative;
 
+.legend-predicted {
+  background: #ff9f43;
+}
+.legend-projected {
+  background: #b875ff;
+}
   background-color: #02060d;
   background-position: center;
   background-size: cover;
@@ -1965,6 +1971,28 @@ overflow: hidden;
     inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
 
+/* Match secondary pages to the transparent landing-console surfaces. */
+.analysis-page .analysis-section {
+  background: rgba(5, 12, 22, 0.42);
+  border-color: rgba(170, 205, 235, 0.24);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+  box-shadow:
+    0 15px 45px rgba(0, 0, 0, 0.35),
+    0 0 30px rgba(40, 130, 220, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.analysis-page .dut-table-wrapper,
+.analysis-page .audit-table-wrapper,
+.analysis-page .anomaly-table-wrapper,
+.analysis-page .queue-table-wrapper,
+.analysis-page .drift-chart-placeholder,
+.analysis-page .feature-importance-chart {
+  background: rgba(2, 10, 20, 0.34);
+  border-color: rgba(126, 188, 235, 0.16);
+}
+
 .analysis-section .panel-header {
   margin-bottom: 18px;
 }
@@ -2423,6 +2451,11 @@ overflow: hidden;
   box-shadow: 0 0 7px rgba(255, 159, 67, 0.5);
 }
 
+.legend-projected {
+  background: #b875ff;
+  box-shadow: 0 0 7px rgba(184, 117, 255, 0.5);
+}
+
 .legend-limit {
   background: #ff5f6d;
   box-shadow: 0 0 7px rgba(255, 95, 109, 0.45);
@@ -2687,9 +2720,12 @@ overflow: hidden;
    ========================= */
 
 .explainability-list {
+  max-height: 620px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding-right: 5px;
 }
 
 .explainability-item {
@@ -3371,6 +3407,13 @@ overflow: hidden;
   font-size: 16px;
 }
 
+.stream-count {
+  display: block;
+  margin-top: 5px;
+  color: #6f91aa;
+  font-size: 10px;
+}
+
 .stream-filters {
   display: flex;
   gap: 2px;
@@ -3434,6 +3477,11 @@ overflow: hidden;
 
 .instrument-table tbody tr:hover {
   background: rgba(0, 200, 182, 0.08);
+}
+
+.instrument-table tbody tr.selected-row {
+  background: rgba(0, 200, 182, 0.14);
+  box-shadow: inset 3px 0 0 #00d8c6;
 }
 
 .instrument-table td:first-child {
@@ -4221,6 +4269,38 @@ overflow-y: auto;
   box-shadow: 0 0 8px rgba(255, 95, 109, 0.55);
 }
 
+/* Final shared surface treatment for all non-dashboard pages. */
+.analysis-page {
+  background: transparent !important;
+}
+
+.analysis-page > .analysis-section {
+  background: rgba(5, 12, 22, 0.26) !important;
+  border: 1px solid rgba(170, 205, 235, 0.22) !important;
+  box-shadow:
+    0 15px 45px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: blur(14px) saturate(115%) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(115%) !important;
+}
+
+.analysis-page .analysis-section .panel-header,
+.analysis-page .analysis-section .analysis-controls,
+.analysis-page .analysis-section .dut-selector,
+.analysis-page .analysis-section .drift-chart-container {
+  background: transparent;
+}
+
+.analysis-page .dut-table-wrapper,
+.analysis-page .audit-table-wrapper,
+.analysis-page .anomaly-table-wrapper,
+.analysis-page .queue-table-wrapper,
+.analysis-page .feature-importance-chart,
+.analysis-page .drift-chart-placeholder {
+  background: rgba(2, 10, 20, 0.22) !important;
+  border-color: rgba(126, 188, 235, 0.15) !important;
+}
+
 .evidence-chain-block,
 .recommendation-block,
 .counterfactual-block {
@@ -4245,6 +4325,30 @@ overflow-y: auto;
   color: #b9cede;
   font-size: 11px;
   line-height: 1.55;
+}
+
+.driver-evidence-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.driver-evidence-list div {
+  display: grid;
+  gap: 2px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(150, 200, 235, 0.1);
+}
+
+.driver-evidence-list strong {
+  color: #dff5ff;
+  font-size: 10px;
+}
+
+.driver-evidence-list span {
+  color: #9fb8cb;
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .chart-empty-state {

@@ -9,6 +9,8 @@ function generateParameterData(parameter, dut) {
 
   const source = { iddq: "iddq_uA", leakage: "leakage_uA", delay: "delay_ns" }[parameter];
   const latest = Number(dut?.[source] ?? NaN);
+  const baseline = Number(dut?.[`${source}_0h`] ?? NaN);
+  const observedHour = Number(dut?.checkpoint_h ?? 24);
   const projected = Number(dut?.[`${source}_projected_500h`] ?? NaN);
   const predictedAt168 = Number(dut?.[`${source}_pred_168h`] ?? NaN);
 
@@ -19,13 +21,30 @@ function generateParameterData(parameter, dut) {
   const data = [];
   const start = latest;
   const target = projected;
-  const referencePrediction = Number.isFinite(predictedAt168) ? predictedAt168 : start + (target - start) * 0.336;
+  const referencePrediction = Number.isFinite(predictedAt168) ? predictedAt168 : null;
+  const firstObserved = Number.isFinite(baseline) ? baseline : latest;
+  const measuredHour = Number.isFinite(observedHour) ? observedHour : 24;
 
   for (let hour = 0; hour <= 500; hour += 24) {
-    const measured = hour <= 168 ? start + (referencePrediction - start) * (hour / 168) : null;
-    const predicted = start + (target - start) * (hour / 500);
-    const interval = Math.max(Math.abs(target - start) * 0.08, 0.05);
-    data.push({ hour, measured, predicted, lower: predicted - interval, upper: predicted + interval, limit: LIMITS[parameter] });
+    const measured = hour === 0 ? firstObserved : hour === measuredHour ? latest : null;
+    const forecast = referencePrediction != null && hour >= measuredHour && hour <= 168
+      ? start + (referencePrediction - start) * ((hour - measuredHour) / Math.max(168 - measuredHour, 1))
+      : null;
+    const projectedValue = hour >= 168 ? referencePrediction != null
+      ? referencePrediction + (target - referencePrediction) * ((hour - 168) / 332)
+      : start + (target - start) * ((hour - measuredHour) / Math.max(500 - measuredHour, 1))
+      : null;
+    const interval = referencePrediction != null ? Math.max(Math.abs(target - start) * 0.08, 0.05) : null;
+    data.push({
+      hour,
+      measured,
+      forecast,
+      projected: projectedValue,
+      lower: forecast != null && interval != null ? forecast - interval : null,
+      upper: forecast != null && interval != null ? forecast + interval : null,
+      confidenceBand: forecast != null && interval != null ? interval * 2 : null,
+      limit: LIMITS[parameter],
+    });
   }
 
   return data;
@@ -50,7 +69,15 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
   const selectedDutData = (initialAnomalyData || []).find((dut) => dut.dut_id === activeDut);
   const selectedProjection = dutProjections[activeDut] || {};
   const parameterData = generateParameterData(selectedParameter, selectedDutData);
-  const driftData = parameterData.map((point) => ({ ...point, confidenceBand: point.upper - point.lower }));
+  const driftData = parameterData;
+
+  const getProjectionValue = (param) => {
+    const key = param === "iddq" ? "iddq" : param === "leakage" ? "leakage" : "delay";
+    const value = selectedProjection[key];
+    if (typeof value !== "string" || value === "N/A") return null;
+    const parsed = Number.parseFloat(value.replace(/[^\d.]/g, ""));
+    return Number.isFinite(parsed) ? parsed : null;
+  };
 
   return (
     <div className="analysis-page">
@@ -121,8 +148,9 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
             <div className="drift-summary-stat"><span>Confidence</span><strong>90%</strong></div>
           </div>
           <div className="chart-legend">
-            <span><i className="legend-measured"></i>Measured trajectory</span>
-            <span><i className="legend-predicted"></i>Predicted trajectory</span>
+            <span><i className="legend-measured"></i>Measured input (0h / observed)</span>
+            <span><i className="legend-predicted"></i>168h model forecast</span>
+            <span><i className="legend-projected"></i>500h digital-twin projection</span>
             <span><i className="legend-limit"></i>Static safety limit</span>
           </div>
           <div className="drift-chart-placeholder digital-twin-chart">
@@ -133,9 +161,10 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
                 <YAxis tick={{ fill: "#718da5", fontSize: 9 }} tickLine={false} axisLine={false} label={{ value: selectedParameter === "iddq" ? "IDDQ (μA)" : selectedParameter === "leakage" ? "Leakage (μA)" : "Delay (ns)", angle: -90, position: "insideLeft", fill: "#617d94", fontSize: 9 }} />
                 <Tooltip contentStyle={{ background: "rgba(4, 14, 25, 0.95)", border: "1px solid rgba(66, 184, 255, 0.25)", borderRadius: "8px", color: "#e8f6ff", fontSize: "11px" }} />
                 <Area type="monotone" dataKey="lower" stackId="confidence" stroke="none" fill="transparent" legendType="none" />
-                <Area type="monotone" dataKey="confidenceBand" stackId="confidence" stroke="none" fill="rgba(66, 184, 255, 0.08)" name="90% Confidence" legendType="none" />
+                <Area type="monotone" dataKey="confidenceBand" stackId="confidence" stroke="none" fill="rgba(66, 184, 255, 0.08)" name="Forecast interval" legendType="none" />
                 <Line type="monotone" dataKey="measured" stroke="#42b8ff" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} name="Measured" />
-                <Line type="monotone" dataKey="predicted" stroke="#ff9f43" strokeWidth={2} strokeDasharray="6 4" dot={{ r: 3 }} name="Predicted" />
+                <Line type="monotone" dataKey="forecast" stroke="#ff9f43" strokeWidth={2} strokeDasharray="6 4" dot={{ r: 3 }} connectNulls={false} name="168h forecast" />
+                <Line type="monotone" dataKey="projected" stroke="#b875ff" strokeWidth={2} strokeDasharray="3 5" dot={{ r: 2 }} connectNulls={false} name="500h projection" />
                 <Line type="monotone" dataKey="limit" stroke="#ff5f6d" strokeWidth={1.5} strokeDasharray="4 4" dot={false} name="Safety Limit" />
               </LineChart>
             </ResponsiveContainer>
@@ -154,9 +183,8 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
         </div>
         <div className="projection-gauges">
           {PARAMS.map((param) => {
-            const val = selectedProjection[param === "iddq" ? "iddq" : param === "leakage" ? "leakage" : "delay"] !== "N/A"
-        ? parseFloat(selectedProjection[param === "iddq" ? "iddq" : param === "leakage" ? "leakage" : "delay"].replace(/[^\d.]/g, ""))
-        : 0;
+            const projectedValue = getProjectionValue(param);
+            const val = projectedValue ?? 0;
             const limit = LIMITS[param];
             return (
               <div className="projection-card" key={param}>
@@ -166,11 +194,11 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
                     <path className="gauge-track" d="M 25 105 A 85 85 0 0 1 195 105" />
                     <path className="gauge-fill" d="M 25 105 A 85 85 0 0 1 195 105" pathLength="100" style={{ strokeDasharray: `${Math.min((val / limit) * 100, 100)} 100` }} />
                   </svg>
-                  <div className="gauge-value">{selectedProjection[param === "iddq" ? "iddq" : param === "leakage" ? "leakage" : "delay"].replace(/[^\d.]/g, "")}</div>
+                  <div className="gauge-value">{projectedValue != null ? projectedValue : "--"}</div>
                   <div className="gauge-scale gauge-scale-left">0</div>
                   <div className="gauge-scale gauge-scale-right">{limit}</div>
                 </div>
-                <div className="gauge-margin">Remaining margin vs. static limit at 500h: {((limit - val) / limit * 100).toFixed(1)}% (limit = {limit} {param === "iddq" ? "μA" : param === "leakage" ? "μA" : "ns"})</div>
+                <div className="gauge-margin">{projectedValue != null ? `Remaining margin vs. static limit at 500h: ${((limit - val) / limit * 100).toFixed(1)}%` : "Upload telemetry to calculate the 500h projection."} (limit = {limit} {param === "iddq" ? "μA" : param === "leakage" ? "μA" : "ns"})</div>
               </div>
             );
           })}

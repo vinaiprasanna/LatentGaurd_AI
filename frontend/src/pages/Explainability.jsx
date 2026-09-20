@@ -17,7 +17,6 @@ function Explainability({ anomalyData: initialAnomalyData }) {
   const driftFeatureImportance = modelMetrics?.drift_feature_importance?.iddq_uA || [];
   const flaggedComponents = (initialAnomalyData || [])
       .filter((d) => d.anomaly_decision === "ANOMALY" || d.risk_band === "HIGH" || d.risk_band === "CRITICAL")
-        .slice(0, 5)
         .map((d) => ({
           dutId: d.dut_id,
           lot: d.lot_id,
@@ -26,6 +25,7 @@ function Explainability({ anomalyData: initialAnomalyData }) {
           confidence: d.risk_confidence_pct,
           explanation: d.explanation,
           evidence: d.evidence_chain,
+          driverEvidence: d.driver_evidence || [],
           recommendedTest: d.recommended_confirmation_test,
           counterfactual: d.thermal_counterfactual,
           features: [
@@ -142,6 +142,11 @@ function Explainability({ anomalyData: initialAnomalyData }) {
                 <div className="evidence-chain-block">
                   <span className="feature-contributions-title">Evidence chain</span>
                   <p>{component.evidence || 'Evidence details unavailable'}</p>
+                  {component.driverEvidence.length > 0 && (
+                    <div className="driver-evidence-list">
+                      {component.driverEvidence.map((item) => <div key={`${item.type}-${item.parameter || item.label}`}><strong>{item.label}</strong><span>{item.text}</span></div>)}
+                    </div>
+                  )}
                 </div>
                 <div className="recommendation-block">
                   <span className="feature-contributions-title">Recommended confirmation test</span>

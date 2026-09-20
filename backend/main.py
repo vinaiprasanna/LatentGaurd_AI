@@ -21,7 +21,7 @@ MODELS_DIR = os.path.join(ROOT, "models")
 sys.path.insert(0, SRC_DIR)
 
 from features import build_dut_features, get_model_feature_columns, PARAMS, get_drift_input_rows
-from explainability import explain_row, build_evidence_chain, recommended_confirmation_test, thermal_counterfactual
+from explainability import explain_row, build_evidence_chain, build_driver_evidence, recommended_confirmation_test, thermal_counterfactual
 from digital_twin import project_trajectory, remaining_margin
 from data_generator import STATIC_LIMITS
 from risk_engine import compute_risk
@@ -47,6 +47,7 @@ def load_models():
 
 _models = load_models()
 _active_results = None
+_active_audit_results = None
 _active_raw_data = None
 _model_metrics = None
 _active_test_metrics = None
@@ -107,7 +108,7 @@ def _record_prediction_job(filename: str, raw_df: pd.DataFrame, cleaned_df: pd.D
     stage_a_flags = int(results.get("stage_a_flag", pd.Series(dtype=bool)).fillna(False).sum())
     result_path = os.path.join(JOB_RESULTS_DIR, f"{job_id}.csv")
     os.makedirs(JOB_RESULTS_DIR, exist_ok=True)
-    filter_output_columns(results).to_csv(result_path, index=False)
+    results.to_csv(result_path, index=False)
     record = {
         "job_id": job_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -224,6 +225,7 @@ def run_prediction(df: pd.DataFrame) -> pd.DataFrame:
             lambda b: "FAIL" if b in ("HIGH", "CRITICAL") else "PASS"
         )
     dut_df["explanation"] = dut_df.apply(explain_row, axis=1)
+    dut_df["driver_evidence"] = dut_df.apply(build_driver_evidence, axis=1)
     dut_df["evidence_chain"] = dut_df.apply(build_evidence_chain, axis=1)
     dut_df["recommended_confirmation_test"] = dut_df.apply(recommended_confirmation_test, axis=1)
     dut_df["thermal_counterfactual"] = dut_df.apply(thermal_counterfactual, axis=1)
@@ -482,10 +484,11 @@ def filter_output_columns(results: pd.DataFrame) -> pd.DataFrame:
     output_cols = [
         "dut_id", "lot_id", "risk_score", "risk_band",
         "risk_confidence_pct", "predicted_outcome", "explanation",
-        "evidence_chain", "recommended_confirmation_test", "thermal_counterfactual",
+        "evidence_chain", "driver_evidence", "recommended_confirmation_test", "thermal_counterfactual",
         "anomaly_ensemble_score", "anomaly_score", "checkpoint_h",
         "anomaly_decision",
         "temperature_c", "vcc_v", "iddq_uA", "leakage_uA", "delay_ns",
+        "iddq_uA_0h", "leakage_uA_0h", "delay_ns_0h",
         "iddq_uA_pred_168h", "iddq_uA_pred_168h_lo", "iddq_uA_pred_168h_hi",
         "leakage_uA_pred_168h", "leakage_uA_pred_168h_lo", "leakage_uA_pred_168h_hi",
         "delay_ns_pred_168h", "delay_ns_pred_168h_lo", "delay_ns_pred_168h_hi",
@@ -725,7 +728,7 @@ def _get_sample_dut(dut_id: str):
 
 @app.post("/predict", response_model=List[Dict[str, Any]])
 def predict(file: UploadFile = File(...)):
-    global _active_results, _active_raw_data, _active_test_metrics, _active_cleaning_report, _active_job_id
+    global _active_results, _active_audit_results, _active_raw_data, _active_test_metrics, _active_cleaning_report, _active_job_id
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
 
@@ -763,6 +766,7 @@ def predict(file: UploadFile = File(...)):
     ]
     output = filter_output_columns(results)
     _active_results = output.copy()
+    _active_audit_results = results.copy()
     _active_raw_data = cleaned_df.copy()
     _active_test_metrics = _evaluate_uploaded_test(output, cleaned_df)
     _active_cleaning_report = cleaning_report.as_dict()
@@ -773,7 +777,7 @@ def predict(file: UploadFile = File(...)):
 
 @app.post("/predict/batch")
 def predict_batch(file: UploadFile = File(...)):
-    global _active_results, _active_raw_data, _active_test_metrics, _active_cleaning_report, _active_job_id
+    global _active_results, _active_audit_results, _active_raw_data, _active_test_metrics, _active_cleaning_report, _active_job_id
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
 
@@ -805,6 +809,7 @@ def predict_batch(file: UploadFile = File(...)):
     ]
     output = filter_output_columns(results)
     _active_results = output.copy()
+    _active_audit_results = results.copy()
     _active_raw_data = cleaned_df.copy()
     _active_test_metrics = _evaluate_uploaded_test(output, cleaned_df)
     _active_cleaning_report = cleaning_report.as_dict()
@@ -855,7 +860,7 @@ def get_audit_log():
         return {"entries": _get_sample_audit_log()}
     all_duts = _get_all_duts()
     entries = []
-    for i, dut in enumerate(all_duts[:20]):
+    for dut in all_duts:
         entries.append({
             "timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
             "dut_id": dut["dut_id"],
@@ -872,6 +877,20 @@ def get_audit_log():
             "_component_future_margin": dut.get("_component_future_margin"),
         })
     return {"entries": entries}
+
+
+@app.get("/api/audit-log/export")
+def get_audit_log_export():
+    """Return the complete current prediction frame for audit export."""
+    if _active_audit_results is None or _active_audit_results.empty:
+        return {"rows": [], "row_count": 0, "message": "No uploaded prediction results are available."}
+    export = _active_audit_results.copy()
+    export["model_version"] = "BG-AI-2.0"
+    export["feature_schema_version"] = "32"
+    export["anomaly_threshold"] = _get_anomaly_threshold()
+    export["exported_at"] = datetime.now(timezone.utc).isoformat()
+    export = export.where(pd.notna(export), None)
+    return {"rows": export.to_dict(orient="records"), "row_count": len(export)}
 
 
 @app.get("/api/audit-jobs")
