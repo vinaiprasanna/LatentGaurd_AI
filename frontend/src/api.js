@@ -36,6 +36,25 @@ export const api = {
     return fetchJson('/api/audit-log');
   },
 
+  getAuditJobs() {
+    return fetchJson('/api/audit-jobs');
+  },
+
+  getAuditJobResults(jobId) {
+    return fetchJson(`/api/audit-jobs/${jobId}/results`);
+  },
+
+  getReviewActions() {
+    return fetchJson('/api/review-actions');
+  },
+
+  recordReviewAction(dutId, lotId, action) {
+    return fetchJson('/api/review-actions', {
+      method: 'POST',
+      body: JSON.stringify({ dut_id: dutId, lot_id: lotId, action }),
+    });
+  },
+
   askCosmo(question, history = [], dutId = null) {
     return fetchJson('/api/chat', {
       method: 'POST',

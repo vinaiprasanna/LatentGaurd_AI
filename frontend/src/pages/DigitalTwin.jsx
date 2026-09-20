@@ -4,32 +4,35 @@ import { LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, Responsive
 const PARAMS = ["iddq", "leakage", "delay"];
 const LIMITS = { iddq: 60, leakage: 15, delay: 18 };
 
-const defaultProjections = {
-  IC0060: { iddq: "42.8 μA", leakage: "8.6 μA", delay: "12.4 ns", margin: "18.4%" },
-  IC0075: { iddq: "45.2 μA", leakage: "9.1 μA", delay: "12.9 ns", margin: "15.8%" },
-  IC0201: { iddq: "51.6 μA", leakage: "10.4 μA", delay: "13.7 ns", margin: "11.2%" },
-  IC0211: { iddq: "48.9 μA", leakage: "10.1 μA", delay: "13.4 ns", margin: "12.6%" },
-  IC0042: { iddq: "39.7 μA", leakage: "7.8 μA", delay: "11.9 ns", margin: "21.3%" },
-  IC0288: { iddq: "43.5 μA", leakage: "8.9 μA", delay: "12.7 ns", margin: "16.7%" },
-};
-
 function generateParameterData(parameter, dut) {
-  const data = [];
+  if (!dut) return [];
+
   const source = { iddq: "iddq_uA", leakage: "leakage_uA", delay: "delay_ns" }[parameter];
-  const start = Number(dut?.[source] || { iddq: 30, leakage: 4, delay: 9.5 }[parameter]);
-  const target = Number(dut?.[`${source}_projected_500h`] || start);
-  const predictedAt168 = Number(dut?.[`${source}_pred_168h`] || start + (target - start) * 0.336);
+  const latest = Number(dut?.[source] ?? NaN);
+  const projected = Number(dut?.[`${source}_projected_500h`] ?? NaN);
+  const predictedAt168 = Number(dut?.[`${source}_pred_168h`] ?? NaN);
+
+  if (!Number.isFinite(latest) || !Number.isFinite(projected)) {
+    return [];
+  }
+
+  const data = [];
+  const start = latest;
+  const target = projected;
+  const referencePrediction = Number.isFinite(predictedAt168) ? predictedAt168 : start + (target - start) * 0.336;
+
   for (let hour = 0; hour <= 500; hour += 24) {
-    const measured = hour <= 168 ? start + (predictedAt168 - start) * (hour / 168) : null;
+    const measured = hour <= 168 ? start + (referencePrediction - start) * (hour / 168) : null;
     const predicted = start + (target - start) * (hour / 500);
     const interval = Math.max(Math.abs(target - start) * 0.08, 0.05);
     data.push({ hour, measured, predicted, lower: predicted - interval, upper: predicted + interval, limit: LIMITS[parameter] });
   }
+
   return data;
 }
 
 function DigitalTwin({ anomalyData: initialAnomalyData }) {
-  const [selectedDut, setSelectedDut] = useState("IC0060");
+  const [selectedDut, setSelectedDut] = useState("");
   const [isDutOpen, setIsDutOpen] = useState(false);
   const [selectedParameter, setSelectedParameter] = useState("iddq");
   const dutList = (initialAnomalyData || []).map((d) => d.dut_id);
@@ -42,10 +45,10 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
       margin: d.iddq_uA_margin_pct_500h !== undefined ? `${Number(d.iddq_uA_margin_pct_500h).toFixed(1)}%` : 'N/A',
     },
   }), {});
-  const dutOptions = dutList.length > 0 ? dutList : Object.keys(defaultProjections);
-  const activeDut = dutOptions.includes(selectedDut) ? selectedDut : dutOptions[0];
+  const dutOptions = dutList;
+  const activeDut = dutOptions.includes(selectedDut) ? selectedDut : (dutOptions[0] || "");
   const selectedDutData = (initialAnomalyData || []).find((dut) => dut.dut_id === activeDut);
-  const selectedProjection = dutProjections[activeDut] || defaultProjections[activeDut];
+  const selectedProjection = dutProjections[activeDut] || {};
   const parameterData = generateParameterData(selectedParameter, selectedDutData);
   const driftData = parameterData.map((point) => ({ ...point, confidenceBand: point.upper - point.lower }));
 
@@ -83,6 +86,14 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
         </div>
       </section>
 
+      {!selectedDutData || !parameterData.length ? (
+        <section className="analysis-section parameter-trends-section">
+          <div className="panel-header">
+            <div><span className="panel-label">DRIFT PREDICTION</span><h2>No projection data available</h2></div>
+          </div>
+          <p>Upload a CSV with burn-in telemetry and projected parameters to populate the digital twin view.</p>
+        </section>
+      ) : (
       <section className="analysis-section parameter-trends-section">
         <div className="panel-header">
           <div><span className="panel-label">DRIFT PREDICTION</span><h2>Parameter Trends</h2></div>
@@ -131,6 +142,7 @@ function DigitalTwin({ anomalyData: initialAnomalyData }) {
           </div>
         </div>
       </section>
+      )}
 
       <section className="analysis-section digital-twin-projection-section">
         <div className="panel-header">

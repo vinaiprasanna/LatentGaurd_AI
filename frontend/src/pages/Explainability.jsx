@@ -16,7 +16,7 @@ function Explainability({ anomalyData: initialAnomalyData }) {
   const globalFeatureImportance = modelMetrics?.anomaly_feature_importance || [];
   const driftFeatureImportance = modelMetrics?.drift_feature_importance?.iddq_uA || [];
   const flaggedComponents = (initialAnomalyData || [])
-        .filter((d) => d.risk_band === "HIGH" || d.risk_band === "CRITICAL")
+      .filter((d) => d.anomaly_decision === "ANOMALY" || d.risk_band === "HIGH" || d.risk_band === "CRITICAL")
         .slice(0, 5)
         .map((d) => ({
           dutId: d.dut_id,
@@ -25,10 +25,15 @@ function Explainability({ anomalyData: initialAnomalyData }) {
           riskBand: d.risk_band,
           confidence: d.risk_confidence_pct,
           explanation: d.explanation,
-          features: globalFeatureImportance.slice(0, 3).map((feature) => ({
-            name: feature.feature,
-            contribution: feature.importance,
-          })),
+          evidence: d.evidence_chain,
+          recommendedTest: d.recommended_confirmation_test,
+          counterfactual: d.thermal_counterfactual,
+          features: [
+            { name: 'Ensemble anomaly', contribution: Number(d._component_anomaly || 0) },
+            { name: 'Future safety margin', contribution: Number(d._component_future_margin || 0) },
+            { name: 'Lot deviation', contribution: Number(d._component_lot_deviation || 0) },
+            { name: 'Drift rate', contribution: Number(d._component_drift_rate || 0) },
+          ].sort((a, b) => b.contribution - a.contribution),
         }));
   return (
     <div className="analysis-page">
@@ -50,12 +55,36 @@ function Explainability({ anomalyData: initialAnomalyData }) {
         {modelMetrics?.metrics_available && (
           <div className="model-metrics-grid">
             <div className="model-info-item"><span>Features Used</span><strong>{modelMetrics.feature_count}</strong></div>
+            <div className="model-info-item"><span>Recommended Threshold</span><strong>{modelMetrics.recommended_anomaly_threshold ?? '--'}</strong></div>
             <div className="model-info-item"><span>Training DUTs</span><strong>{modelMetrics.training_duts}</strong></div>
             <div className="model-info-item"><span>Training Accuracy</span><strong>{modelMetrics.anomaly.accuracy != null ? `${(modelMetrics.anomaly.accuracy * 100).toFixed(1)}%` : '--'}</strong></div>
             <div className="model-info-item"><span>Training F1</span><strong>{modelMetrics.anomaly.f1 != null ? `${(modelMetrics.anomaly.f1 * 100).toFixed(1)}%` : '--'}</strong></div>
             <div className="model-info-item"><span>IDDQ Drift R2</span><strong>{modelMetrics.drift.iddq_uA?.r2 ?? '--'}</strong></div>
             <div className="model-info-item"><span>Leakage Drift R2</span><strong>{modelMetrics.drift.leakage_uA?.r2 ?? '--'}</strong></div>
             <div className="model-info-item"><span>Delay Drift R2</span><strong>{modelMetrics.drift.delay_ns?.r2 ?? '--'}</strong></div>
+          </div>
+        )}
+        {modelMetrics?.validation_available && modelMetrics.validation && (
+          <div className="model-test-results">
+            <p className="section-description">Held-out validation: {modelMetrics.validation.evaluation_scope}. Threshold policy: {modelMetrics.validation.threshold_policy}.</p>
+            <div className="model-metrics-grid">
+              <div className="model-info-item"><span>Validation Accuracy</span><strong>{(modelMetrics.validation.accuracy * 100).toFixed(1)}%</strong></div>
+              <div className="model-info-item"><span>Validation Precision</span><strong>{(modelMetrics.validation.precision * 100).toFixed(1)}%</strong></div>
+              <div className="model-info-item"><span>Validation Recall</span><strong>{(modelMetrics.validation.recall * 100).toFixed(1)}%</strong></div>
+              <div className="model-info-item"><span>Validation F1</span><strong>{(modelMetrics.validation.f1 * 100).toFixed(1)}%</strong></div>
+              <div className="model-info-item"><span>False-Negative Rate</span><strong>{(modelMetrics.validation.false_negative_rate * 100).toFixed(1)}%</strong></div>
+            </div>
+          </div>
+        )}
+        {modelMetrics?.drift_validation?.available && (
+          <div className="model-test-results">
+            <p className="section-description">Held-out drift validation: {modelMetrics.drift_validation.evaluation_scope}. Prediction interval coverage is measured against the actual 168-hour checkpoint.</p>
+            <div className="model-metrics-grid">
+              {['iddq_uA', 'leakage_uA', 'delay_ns'].map((parameter) => {
+                const result = modelMetrics.drift_validation.parameters?.[parameter];
+                return <div className="model-info-item" key={parameter}><span>{parameter} Holdout R2 / Coverage</span><strong>{result ? `${result.r2} / ${(result.interval_coverage * 100).toFixed(1)}%` : '--'}</strong></div>;
+              })}
+            </div>
           </div>
         )}
         {modelMetrics?.prediction_input && <p className="section-description model-evaluation-note">Prediction file: {modelMetrics.prediction_input.dut_count} DUTs, {modelMetrics.prediction_input.overlap_with_training_duts} overlap with training IDs. Validation accuracy is unavailable because the file has no labels.</p>}
@@ -70,7 +99,14 @@ function Explainability({ anomalyData: initialAnomalyData }) {
               <div className="model-info-item"><span>False-Negative Rate</span><strong>{(modelMetrics.test.false_negative_rate * 100).toFixed(1)}%</strong></div>
             </div>}
             {modelMetrics.test.drift_metrics_available && <div className="model-metrics-grid">
-              {['iddq_uA', 'leakage_uA', 'delay_ns'].map((parameter) => <div className="model-info-item" key={parameter}><span>{parameter} Test RMSE</span><strong>{modelMetrics.test.drift[parameter]?.rmse ?? '--'}</strong></div>)}
+              {['iddq_uA', 'leakage_uA', 'delay_ns'].map((parameter) => {
+                const result = modelMetrics.test.drift[parameter];
+                return <div className="model-info-item" key={parameter}><span>{parameter} Test RMSE</span><strong>{result?.rmse ?? '--'}</strong></div>;
+              })}
+              {['iddq_uA', 'leakage_uA', 'delay_ns'].map((parameter) => {
+                const result = modelMetrics.test.drift[parameter];
+                return <div className="model-info-item" key={`${parameter}-coverage`}><span>{parameter} Interval Coverage</span><strong>{result?.interval_coverage != null ? `${(result.interval_coverage * 100).toFixed(1)}%` : '--'}</strong></div>;
+              })}
             </div>}
             <p className="section-description model-evaluation-note">Training DUT overlap: {modelMetrics.test.overlap_with_training_duts}. Independent test: {modelMetrics.test.is_independent_test ? 'yes' : 'no'}.</p>
             {!modelMetrics.test.is_independent_test && <p className="section-description model-evaluation-note">Warning: some uploaded DUT IDs overlap with training data, so this is not a fully independent test.</p>}
@@ -103,8 +139,20 @@ function Explainability({ anomalyData: initialAnomalyData }) {
               <div className={`explainability-details ${expandedDut === component.dutId ? "visible" : ""}`}>
                 <span>Confidence: {component.confidence}%</span>
                 <span>Why flagged: {component.explanation}</span>
+                <div className="evidence-chain-block">
+                  <span className="feature-contributions-title">Evidence chain</span>
+                  <p>{component.evidence || 'Evidence details unavailable'}</p>
+                </div>
+                <div className="recommendation-block">
+                  <span className="feature-contributions-title">Recommended confirmation test</span>
+                  <p>{component.recommendedTest || 'Confirmation test unavailable'}</p>
+                </div>
+                <div className="counterfactual-block">
+                  <span className="feature-contributions-title">Thermal counterfactual</span>
+                  <p>{component.counterfactual || 'Thermal projection unavailable'}</p>
+                </div>
                 <div className="feature-contributions">
-                  <span className="feature-contributions-title">Top contributing features</span>
+                  <span className="feature-contributions-title">Local risk drivers</span>
                   {component.features.map((feature) => (
                     <div className="feature-contribution" key={feature.name}>
                       <span>{feature.name}</span>

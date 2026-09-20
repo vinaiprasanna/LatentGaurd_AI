@@ -1,0 +1,54 @@
+{
+  "available": true,
+  "evaluation_scope": "lot-level holdout; model trained on 16 lots and evaluated on 4 unseen lots",
+  "train_lots": [
+    "LOT202601",
+    "LOT202602",
+    "LOT202603",
+    "LOT202604",
+    "LOT202606",
+    "LOT202607",
+    "LOT202608",
+    "LOT202609",
+    "LOT202611",
+    "LOT202612",
+    "LOT202613",
+    "LOT202614",
+    "LOT202616",
+    "LOT202617",
+    "LOT202618",
+    "LOT202619"
+  ],
+  "holdout_lots": [
+    "LOT202600",
+    "LOT202605",
+    "LOT202610",
+    "LOT202615"
+  ],
+  "train_duts": 4000,
+  "holdout_duts": 1000,
+  "feature_count": 17,
+  "parameters": {
+    "iddq_uA": {
+      "mae": 1.7892,
+      "rmse": 4.015,
+      "r2": 0.34,
+      "interval_coverage": 0.918,
+      "mean_interval_width": 4.931
+    },
+    "leakage_uA": {
+      "mae": 0.2958,
+      "rmse": 0.6633,
+      "r2": 0.4112,
+      "interval_coverage": 0.89,
+      "mean_interval_width": 0.7247
+    },
+    "delay_ns": {
+      "mae": 0.1613,
+      "rmse": 0.3748,
+      "r2": 0.4583,
+      "interval_coverage": 0.892,
+      "mean_interval_width": 0.3992
+    }
+  }
+}

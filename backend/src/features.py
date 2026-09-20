@@ -41,6 +41,7 @@ def build_dut_features(raw_df: pd.DataFrame) -> pd.DataFrame:
     """Collapse per-checkpoint telemetry into one physics + statistics
     feature row per DUT, then add lot-relative (population) features.
     """
+    screening = compute_stage_a_mad_flags(raw_df)
     records = []
     for dut_id, g in raw_df.groupby("dut_id"):
         g = g.sort_values("checkpoint_h")
@@ -78,6 +79,12 @@ def build_dut_features(raw_df: pd.DataFrame) -> pd.DataFrame:
 
     dut_df = pd.DataFrame(records)
 
+    if not screening.empty:
+        subset = screening[["dut_id", "lot_id", "stage_a_flag", "stage_a_robust_zscore_max"]].copy()
+        dut_df = dut_df.merge(subset, on=["dut_id", "lot_id"], how="left")
+        dut_df["stage_a_flag"] = dut_df["stage_a_flag"].fillna(False).astype(bool)
+        dut_df["stage_a_robust_zscore_max"] = dut_df["stage_a_robust_zscore_max"].fillna(0.0)
+
     for p in PARAMS:
         for col in [f"{p}_last", f"{p}_slope", f"{p}_physics_norm_slope"]:
             lot_mean = dut_df.groupby("lot_id")[col].transform("mean")
@@ -87,11 +94,67 @@ def build_dut_features(raw_df: pd.DataFrame) -> pd.DataFrame:
     return dut_df
 
 
+def compute_stage_a_mad_flags(df: pd.DataFrame, threshold: float = 3.5) -> pd.DataFrame:
+    """Screen each DUT against the lot median using a robust MAD z-score.
+
+    Stage A acts as a pre-model safeguard: if any DUT deviates sharply from its lot
+    on the core electrical parameters, the result is explicitly marked for follow-up
+    before the anomaly ensemble is trusted.
+    """
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["dut_id", "lot_id", "stage_a_robust_zscore_max", "stage_a_flag"])
+
+    working = df.copy()
+    if "checkpoint_h" in working.columns:
+        working = working.sort_values("checkpoint_h")
+
+    if "dut_id" in working.columns and "lot_id" in working.columns:
+        per_dut = working.groupby(["lot_id", "dut_id"], as_index=False).tail(1)
+    else:
+        per_dut = working.copy()
+
+    target_cols = [c for c in ["iddq_uA", "leakage_uA", "delay_ns"] if c in per_dut.columns]
+    if not target_cols:
+        target_cols = [c for c in per_dut.select_dtypes(include=[np.number]).columns if c not in {"temperature_c", "vcc_v"}]
+
+    if "dut_id" not in per_dut.columns:
+        per_dut["dut_id"] = per_dut.index.astype(str)
+    if "lot_id" not in per_dut.columns:
+        per_dut["lot_id"] = "LOT-UNKNOWN"
+
+    rows = []
+    for _, row in per_dut.iterrows():
+        lot_id = str(row.get("lot_id", "LOT-UNKNOWN"))
+        lot_rows = per_dut[per_dut["lot_id"].astype(str) == lot_id].copy()
+        zscores = []
+        for param in target_cols:
+            values = pd.to_numeric(lot_rows[param], errors="coerce")
+            median = values.median()
+            mad = (values - median).abs().median()
+            if pd.isna(median) or pd.isna(mad) or mad == 0:
+                continue
+            z = 0.6745 * (pd.to_numeric(row.get(param), errors="coerce") - median) / mad
+            zscores.append(abs(float(z)))
+
+        max_z = float(np.max(zscores)) if zscores else 0.0
+        rows.append({
+            "dut_id": row["dut_id"],
+            "lot_id": lot_id,
+            "stage_a_robust_zscore_max": max_z,
+            "stage_a_flag": bool(max_z > threshold),
+        })
+
+    return pd.DataFrame(rows)
+
+
 FEATURE_COLUMNS = None
 
 
 def get_model_feature_columns(dut_df: pd.DataFrame):
     """Numeric columns used as the ML feature vector (excludes IDs / labels)."""
-    exclude = {"dut_id", "lot_id", "true_latent_defect", "calibration_source"}
+    exclude = {
+        "dut_id", "lot_id", "true_latent_defect", "calibration_source",
+        "stage_a_robust_zscore_max", "stage_a_flag",
+    }
     cols = [c for c in dut_df.columns if c not in exclude and dut_df[c].dtype != object]
     return cols

@@ -69,7 +69,7 @@ function AnomalyAnalysis({ anomalyData: initialAnomalyData }) {
         <div className="dut-table-wrapper">
           <table className="dut-table">
             <thead>
-              <tr><th>DUT ID</th><th>Lot</th><th>Risk Score</th><th>Risk Band</th><th>Confidence %</th><th>Anomaly Score</th><th>Why Flagged?</th></tr>
+              <tr><th>DUT ID</th><th>Lot</th><th>Risk Score</th><th>Risk Band</th><th>Anomaly Decision</th><th>Confidence %</th><th>Anomaly Score</th><th>Why Flagged?</th></tr>
             </thead>
             <tbody>
               {filteredDutData.map((dut) => (
@@ -78,6 +78,7 @@ function AnomalyAnalysis({ anomalyData: initialAnomalyData }) {
                   <td>{dut.lot_id}</td>
                   <td>{dut.risk_score}</td>
                   <td><span className={`risk-${(dut.risk_band || '').toLowerCase()}`}>{dut.risk_band}</span></td>
+                  <td><span className={`anomaly-decision ${(dut.anomaly_decision || 'NORMAL').toLowerCase()}`}>{dut.anomaly_decision || 'NORMAL'}</span></td>
                   <td>{dut.risk_confidence_pct}%</td>
                   <td>{dut.anomaly_ensemble_score ? dut.anomaly_ensemble_score.toFixed(2) : '--'}</td>
                   <td>{dut.explanation}</td>

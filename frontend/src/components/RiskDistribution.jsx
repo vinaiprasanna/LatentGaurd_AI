@@ -8,11 +8,15 @@ function RiskDistribution({ anomalyData: propData }) {
   const critical = data.filter((d) => d.risk_band === "CRITICAL").length;
 
   const riskData = [
-    { name: "Low Risk", value: low || 760 },
-    { name: "Medium Risk", value: medium || 345 },
-    { name: "High Risk", value: high || 120 },
-    { name: "Critical", value: critical || 23 },
+    { name: "Low Risk", value: low },
+    { name: "Medium Risk", value: medium },
+    { name: "High Risk", value: high },
+    { name: "Critical", value: critical },
   ];
+
+  if (!data.length) {
+    return <div className="chart-empty-state">Upload telemetry to view risk distribution.</div>;
+  }
 
   const COLORS = ["#32d583", "#f5c451", "#ff9f43", "#ff4d5e"];
 

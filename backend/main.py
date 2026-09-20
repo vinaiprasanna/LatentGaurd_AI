@@ -7,6 +7,10 @@ Run with:  uvicorn main:app --host 0.0.0.0 --port 8000
 import os
 import sys
 import pickle
+import hashlib
+import json
+import uuid
+from datetime import datetime, timezone
 import pandas as pd
 import numpy as np
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_absolute_error, mean_squared_error, r2_score
@@ -17,7 +21,7 @@ MODELS_DIR = os.path.join(ROOT, "models")
 sys.path.insert(0, SRC_DIR)
 
 from features import build_dut_features, get_model_feature_columns, PARAMS, get_drift_input_rows
-from explainability import explain_row
+from explainability import explain_row, build_evidence_chain, recommended_confirmation_test, thermal_counterfactual
 from digital_twin import project_trajectory, remaining_margin
 from data_generator import STATIC_LIMITS
 from risk_engine import compute_risk
@@ -26,6 +30,9 @@ from data_cleaner import clean_and_validate
 
 ANOMALY_MODEL_PATH = os.path.join(MODELS_DIR, "anomaly_ensemble_model.pkl")
 DRIFT_MODEL_PATH = os.path.join(MODELS_DIR, "drift_model.pkl")
+AUDIT_STORE_PATH = os.path.join(ROOT, "outputs", "audit_jobs.json")
+REVIEW_STORE_PATH = os.path.join(ROOT, "outputs", "review_actions.json")
+JOB_RESULTS_DIR = os.path.join(ROOT, "outputs", "jobs")
 
 
 def load_models():
@@ -44,6 +51,103 @@ _active_raw_data = None
 _model_metrics = None
 _active_test_metrics = None
 _active_cleaning_report = None
+_active_job_id = None
+
+
+def _load_audit_jobs():
+    if not os.path.exists(AUDIT_STORE_PATH):
+        return []
+    try:
+        with open(AUDIT_STORE_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _load_review_actions():
+    if not os.path.exists(REVIEW_STORE_PATH):
+        return []
+    try:
+        with open(REVIEW_STORE_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _record_review_action(dut_id: str, lot_id: str, action: str):
+    status_by_action = {
+        "ACKNOWLEDGED": "Acknowledged",
+        "INVESTIGATE": "Under Investigation",
+        "RESOLVE": "Resolved",
+    }
+    if action not in status_by_action:
+        raise ValueError("Unsupported review action")
+    record = {
+        "action_id": f"review_{uuid.uuid4().hex[:12]}",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "job_id": _active_job_id,
+        "dut_id": dut_id,
+        "lot_id": lot_id,
+        "action": action,
+        "status": status_by_action[action],
+    }
+    actions = _load_review_actions()
+    actions.append(record)
+    os.makedirs(os.path.dirname(REVIEW_STORE_PATH), exist_ok=True)
+    with open(REVIEW_STORE_PATH, "w", encoding="utf-8") as handle:
+        json.dump(actions[-500:], handle, indent=2)
+    return record
+
+
+def _record_prediction_job(filename: str, raw_df: pd.DataFrame, cleaned_df: pd.DataFrame, results: pd.DataFrame, report):
+    job_id = f"job_{uuid.uuid4().hex[:12]}"
+    input_hash = hashlib.sha256(raw_df.to_csv(index=False).encode("utf-8")).hexdigest()
+    stage_a_flags = int(results.get("stage_a_flag", pd.Series(dtype=bool)).fillna(False).sum())
+    result_path = os.path.join(JOB_RESULTS_DIR, f"{job_id}.csv")
+    os.makedirs(JOB_RESULTS_DIR, exist_ok=True)
+    filter_output_columns(results).to_csv(result_path, index=False)
+    record = {
+        "job_id": job_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "source_filename": filename,
+        "input_sha256": input_hash,
+        "model_version": "BG-AI-2.0",
+        "feature_schema_version": "32",
+        "anomaly_threshold": _get_anomaly_threshold(),
+        "rows_received": int(len(raw_df)),
+        "rows_cleaned": int(len(cleaned_df)),
+        "dut_count": int(results["dut_id"].nunique()) if "dut_id" in results else 0,
+        "lot_count": int(results["lot_id"].nunique()) if "lot_id" in results else 0,
+        "stage_a_flagged": stage_a_flags,
+        "risk_counts": results["risk_band"].value_counts().to_dict() if "risk_band" in results else {},
+        "cleaning_report": report.as_dict(),
+        "result_file": os.path.relpath(result_path, ROOT),
+    }
+    jobs = _load_audit_jobs()
+    jobs.append(record)
+    retained_jobs = jobs[-100:]
+    retained_ids = {job["job_id"] for job in retained_jobs}
+    for filename in os.listdir(JOB_RESULTS_DIR):
+        if filename.endswith(".csv") and filename[:-4] not in retained_ids:
+            try:
+                os.remove(os.path.join(JOB_RESULTS_DIR, filename))
+            except OSError:
+                pass
+    os.makedirs(os.path.dirname(AUDIT_STORE_PATH), exist_ok=True)
+    with open(AUDIT_STORE_PATH, "w", encoding="utf-8") as handle:
+        json.dump(retained_jobs, handle, indent=2)
+    return job_id
+
+
+def _get_anomaly_threshold():
+    validation_path = os.path.join(MODELS_DIR, "validation_metrics.json")
+    try:
+        with open(validation_path, "r", encoding="utf-8") as handle:
+            return float(json.load(handle).get("threshold", 0.5))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return 0.5
 
 # ---------------------------------------------------------------------------
 # Prediction logic
@@ -67,6 +171,11 @@ def run_prediction(df: pd.DataFrame) -> pd.DataFrame:
     scores = ensemble.score(X)
     for k, v in scores.items():
         dut_df[k] = v
+    dut_df["anomaly_decision"] = np.where(
+        dut_df["anomaly_ensemble_score"] >= _get_anomaly_threshold(),
+        "ANOMALY",
+        "NORMAL",
+    )
 
     # Drift predictions: only the early burn-in signal set is allowed as input.
     drift_input_df = build_dut_features(get_drift_input_rows(df))
@@ -104,10 +213,20 @@ def run_prediction(df: pd.DataFrame) -> pd.DataFrame:
 
     # Risk computation
     dut_df = compute_risk(dut_df, STATIC_LIMITS, PARAMS)
+    if "stage_a_flag" in dut_df.columns:
+        dut_df["risk_score"] = np.where(
+            dut_df["stage_a_flag"],
+            np.clip(dut_df["risk_score"] + 20.0, 0, 100),
+            dut_df["risk_score"],
+        )
+        dut_df["risk_band"] = dut_df["risk_score"].apply(lambda s: "CRITICAL" if s >= 80 else "HIGH" if s >= 60 else "MEDIUM" if s >= 30 else "LOW")
+        dut_df["predicted_outcome"] = dut_df["risk_band"].apply(
+            lambda b: "FAIL" if b in ("HIGH", "CRITICAL") else "PASS"
+        )
     dut_df["explanation"] = dut_df.apply(explain_row, axis=1)
-    dut_df["predicted_outcome"] = dut_df["risk_band"].apply(
-        lambda b: "FAIL" if b in ("HIGH", "CRITICAL") else "PASS"
-    )
+    dut_df["evidence_chain"] = dut_df.apply(build_evidence_chain, axis=1)
+    dut_df["recommended_confirmation_test"] = dut_df.apply(recommended_confirmation_test, axis=1)
+    dut_df["thermal_counterfactual"] = dut_df.apply(thermal_counterfactual, axis=1)
 
     return dut_df
 
@@ -163,6 +282,26 @@ def _get_model_metrics():
         "anomaly_feature_importance": [],
         "drift_feature_importance": {},
     }
+
+    validation_path = os.path.join(MODELS_DIR, "validation_metrics.json")
+    if os.path.exists(validation_path):
+        try:
+            with open(validation_path, "r", encoding="utf-8") as handle:
+                validation = json.load(handle)
+            metrics["validation"] = validation
+            metrics["validation_available"] = bool(validation.get("available"))
+            metrics["validation_message"] = validation.get("evaluation_scope")
+            metrics["recommended_anomaly_threshold"] = validation.get("threshold", 0.5)
+        except (OSError, json.JSONDecodeError):
+            metrics["validation_message"] = "Validation metrics artifact could not be read."
+
+    drift_validation_path = os.path.join(MODELS_DIR, "drift_validation_metrics.json")
+    if os.path.exists(drift_validation_path):
+        try:
+            with open(drift_validation_path, "r", encoding="utf-8") as handle:
+                metrics["drift_validation"] = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            metrics["drift_validation_message"] = "Drift validation metrics artifact could not be read."
 
     prediction_path = os.path.join(ROOT, "prediction_input.csv")
     if os.path.exists(prediction_path):
@@ -240,7 +379,8 @@ def _evaluate_uploaded_test(results: pd.DataFrame, raw_df: pd.DataFrame):
         labels = raw_df[["dut_id", "true_latent_defect"]].drop_duplicates("dut_id")
         evaluated = results.merge(labels, on="dut_id", how="inner", suffixes=("", "_input"))
         if not evaluated.empty:
-            y_true = np.asarray(evaluated["true_latent_defect_input"].to_numpy(dtype=int))
+            label_column = "true_latent_defect_input" if "true_latent_defect_input" in evaluated else "true_latent_defect"
+            y_true = np.asarray(evaluated[label_column].to_numpy(dtype=int))
             y_pred = np.asarray((evaluated["anomaly_ensemble_score"].to_numpy(dtype=float) >= 0.5).astype(int))
             metrics.update({
                 "available": True,
@@ -265,19 +405,30 @@ def _evaluate_uploaded_test(results: pd.DataFrame, raw_df: pd.DataFrame):
     for parameter in PARAMS:
         target_field = f"{parameter}_last"
         prediction_field = f"{parameter}_pred_168h"
-        if target_field in drift_results and prediction_field in drift_results and not drift_results.empty:
+        if prediction_field in drift_results and not drift_results.empty:
             prediction = drift_results.set_index(drift_results["dut_id"].astype(str))[prediction_field]
             prediction = prediction[prediction.index.isin(actual_168.index)]
             target = actual_168.loc[prediction.index, parameter].astype(float) if not actual_168.empty else pd.Series(dtype=float)
             prediction = prediction.astype(float)
             if target.empty:
                 continue
-            drift_metrics[parameter] = {
+            parameter_metrics = {
                 "mae": round(float(mean_absolute_error(target, prediction)), 4),
                 "rmse": round(float(np.sqrt(mean_squared_error(target, prediction))), 4),
                 "r2": round(float(r2_score(target, prediction)), 4),
-                "test_duts": int(len(drift_results)),
+                "test_duts": int(len(prediction)),
             }
+            lower_field = f"{parameter}_pred_168h_lo"
+            upper_field = f"{parameter}_pred_168h_hi"
+            if lower_field in drift_results and upper_field in drift_results:
+                indexed_results = drift_results.set_index(drift_results["dut_id"].astype(str))
+                lower = indexed_results.loc[prediction.index, lower_field].astype(float)
+                upper = indexed_results.loc[prediction.index, upper_field].astype(float)
+                parameter_metrics.update({
+                    "interval_coverage": round(float(((target >= lower) & (target <= upper)).mean()), 4),
+                    "mean_interval_width": round(float((upper - lower).mean()), 4),
+                })
+            drift_metrics[parameter] = parameter_metrics
     metrics["drift"] = drift_metrics
     metrics["drift_metrics_available"] = bool(drift_metrics)
     if not drift_metrics:
@@ -318,6 +469,35 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
+
+def resolve_allowed_origins() -> List[str]:
+    raw_value = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    if raw_value.strip().lower() == "*":
+        return ["*"]
+    origins = [origin.strip() for origin in raw_value.split(",") if origin.strip()]
+    return origins or ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
+def filter_output_columns(results: pd.DataFrame) -> pd.DataFrame:
+    output_cols = [
+        "dut_id", "lot_id", "risk_score", "risk_band",
+        "risk_confidence_pct", "predicted_outcome", "explanation",
+        "evidence_chain", "recommended_confirmation_test", "thermal_counterfactual",
+        "anomaly_ensemble_score", "anomaly_score", "checkpoint_h",
+        "anomaly_decision",
+        "temperature_c", "vcc_v", "iddq_uA", "leakage_uA", "delay_ns",
+        "iddq_uA_pred_168h", "iddq_uA_pred_168h_lo", "iddq_uA_pred_168h_hi",
+        "leakage_uA_pred_168h", "leakage_uA_pred_168h_lo", "leakage_uA_pred_168h_hi",
+        "delay_ns_pred_168h", "delay_ns_pred_168h_lo", "delay_ns_pred_168h_hi",
+        "iddq_uA_projected_500h", "iddq_uA_margin_pct_500h",
+        "leakage_uA_projected_500h", "leakage_uA_margin_pct_500h",
+        "delay_ns_projected_500h", "delay_ns_margin_pct_500h",
+        "_component_anomaly", "_component_lot_deviation", "_component_drift_rate", "_component_future_margin",
+    ]
+    available = [column for column in output_cols if column in results.columns]
+    return results[available].copy() if available else results.copy()
+
+
 app = FastAPI(
     title="BurnInGuard AI 2.0",
     description="Physics-informed, explainable PASS/FAIL prediction for component burn-in screening",
@@ -326,7 +506,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=resolve_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -363,6 +543,12 @@ class ChatRequest(BaseModel):
     question: str
     dut_id: Optional[str] = None
     history: Optional[List[Dict[str, Any]]] = None
+
+
+class ReviewActionRequest(BaseModel):
+    dut_id: str
+    lot_id: str
+    action: str
 
 
 @app.get("/health")
@@ -539,7 +725,7 @@ def _get_sample_dut(dut_id: str):
 
 @app.post("/predict", response_model=List[Dict[str, Any]])
 def predict(file: UploadFile = File(...)):
-    global _active_results, _active_raw_data, _active_test_metrics, _active_cleaning_report
+    global _active_results, _active_raw_data, _active_test_metrics, _active_cleaning_report, _active_job_id
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
 
@@ -575,20 +761,19 @@ def predict(file: UploadFile = File(...)):
         "delay_ns_projected_500h", "delay_ns_margin_pct_500h",
         "_component_anomaly", "_component_lot_deviation", "_component_drift_rate", "_component_future_margin"
     ]
-    available_cols = [c for c in output_cols if c in results.columns]
-    output = results[available_cols]
-    output = results
+    output = filter_output_columns(results)
     _active_results = output.copy()
     _active_raw_data = cleaned_df.copy()
     _active_test_metrics = _evaluate_uploaded_test(output, cleaned_df)
     _active_cleaning_report = cleaning_report.as_dict()
+    _active_job_id = _record_prediction_job(file.filename, df, cleaned_df, results, cleaning_report)
 
     return output.to_dict(orient="records")
 
 
 @app.post("/predict/batch")
 def predict_batch(file: UploadFile = File(...)):
-    global _active_results, _active_raw_data, _active_test_metrics, _active_cleaning_report
+    global _active_results, _active_raw_data, _active_test_metrics, _active_cleaning_report, _active_job_id
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted")
 
@@ -618,13 +803,12 @@ def predict_batch(file: UploadFile = File(...)):
         "iddq_uA_projected_500h", "leakage_uA_projected_500h", "delay_ns_margin_pct_500h",
         "_component_anomaly", "_component_lot_deviation", "_component_drift_rate", "_component_future_margin"
     ]
-    available_cols = [c for c in output_cols if c in results.columns]
-    output = results[available_cols]
-    output = results
+    output = filter_output_columns(results)
     _active_results = output.copy()
     _active_raw_data = cleaned_df.copy()
     _active_test_metrics = _evaluate_uploaded_test(output, cleaned_df)
     _active_cleaning_report = cleaning_report.as_dict()
+    _active_job_id = _record_prediction_job(file.filename, df, cleaned_df, results, cleaning_report)
 
     output_path = os.path.join(ROOT, "outputs", "prediction_output.csv")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -677,6 +861,7 @@ def get_audit_log():
             "dut_id": dut["dut_id"],
             "lot_id": dut["lot_id"],
             "risk_band": dut["risk_band"],
+            "anomaly_decision": dut.get("anomaly_decision", "NORMAL"),
             "risk_score": dut["risk_score"],
             "confidence_pct": dut["risk_confidence_pct"],
             "explanation": dut["explanation"],
@@ -687,6 +872,41 @@ def get_audit_log():
             "_component_future_margin": dut.get("_component_future_margin"),
         })
     return {"entries": entries}
+
+
+@app.get("/api/audit-jobs")
+def get_audit_jobs():
+    """Return durable upload-level provenance records, newest first."""
+    return {"jobs": list(reversed(_load_audit_jobs()))}
+
+
+@app.get("/api/audit-jobs/{job_id}/results")
+def get_audit_job_results(job_id: str):
+    """Return the sanitized prediction snapshot associated with an audit job."""
+    if not job_id.startswith("job_"):
+        raise HTTPException(status_code=400, detail="Invalid job ID")
+    result_path = os.path.join(JOB_RESULTS_DIR, f"{job_id}.csv")
+    if not os.path.isfile(result_path):
+        raise HTTPException(status_code=404, detail="Prediction snapshot not found")
+    try:
+        return {"job_id": job_id, "results": pd.read_csv(result_path).to_dict(orient="records")}
+    except (OSError, ValueError) as error:
+        raise HTTPException(status_code=500, detail=f"Failed to read prediction snapshot: {error}")
+
+
+@app.get("/api/review-actions")
+def get_review_actions():
+    """Return durable reviewer actions, newest first."""
+    return {"actions": list(reversed(_load_review_actions()))}
+
+
+@app.post("/api/review-actions")
+def create_review_action(request: ReviewActionRequest):
+    """Record an acknowledge, investigate, or resolve action for a DUT."""
+    try:
+        return _record_review_action(request.dut_id, request.lot_id, request.action)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
 
 
 def _get_sample_audit_log():

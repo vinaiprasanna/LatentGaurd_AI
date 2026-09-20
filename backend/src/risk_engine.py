@@ -35,11 +35,11 @@ def _band(score):
     return "CRITICAL"
 
 
-def _minmax_series(s: pd.Series) -> pd.Series:
-    lo, hi = s.quantile(0.01), s.quantile(0.99)
-    if hi - lo < 1e-9:
+def _fixed_scale(s: pd.Series, scale: float) -> pd.Series:
+    """Map a component using a stable training/domain scale, not batch ranks."""
+    if scale <= 0:
         return pd.Series(np.zeros(len(s)), index=s.index)
-    return ((s - lo) / (hi - lo)).clip(0, 1)
+    return (s / scale).clip(0, 1)
 
 
 def compute_risk(dut_df: pd.DataFrame, static_limits: dict, param_list) -> pd.DataFrame:
@@ -49,11 +49,11 @@ def compute_risk(dut_df: pd.DataFrame, static_limits: dict, param_list) -> pd.Da
 
     zscore_cols = [c for c in df.columns if c.endswith("_last_lot_zscore")]
     lot_dev_raw = df[zscore_cols].abs().max(axis=1) if zscore_cols else pd.Series(0, index=df.index)
-    lot_dev_component = _minmax_series(lot_dev_raw)
+    lot_dev_component = _fixed_scale(lot_dev_raw, 3.5)
 
     slope_cols = [c for c in df.columns if c.endswith("_physics_norm_slope")]
     drift_raw = df[slope_cols].abs().max(axis=1) if slope_cols else pd.Series(0, index=df.index)
-    drift_component = _minmax_series(drift_raw)
+    drift_component = _fixed_scale(drift_raw, 0.05)
 
     margin_scores = []
     for p in param_list:
@@ -63,7 +63,7 @@ def compute_risk(dut_df: pd.DataFrame, static_limits: dict, param_list) -> pd.Da
             margin_scores.append(proximity)
     if margin_scores:
         future_margin_raw = pd.concat(margin_scores, axis=1).max(axis=1)
-        future_margin_component = _minmax_series(future_margin_raw)
+        future_margin_component = future_margin_raw.clip(0, 1)
     else:
         future_margin_component = pd.Series(0, index=df.index)
 
@@ -80,7 +80,7 @@ def compute_risk(dut_df: pd.DataFrame, static_limits: dict, param_list) -> pd.Da
     width_cols = [c for c in df.columns if c.endswith("_pred_interval_width")]
     if width_cols:
         avg_width = df[width_cols].mean(axis=1)
-        interval_confidence = 1.0 - _minmax_series(avg_width)
+        interval_confidence = 1.0 - _fixed_scale(avg_width, 10.0)
     else:
         interval_confidence = pd.Series(0.5, index=df.index)
 

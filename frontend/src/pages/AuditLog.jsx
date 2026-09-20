@@ -3,13 +3,21 @@ import { api } from "../api";
 
 function AuditLog() {
   const [entries, setEntries] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [reviewActions, setReviewActions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchAudit = async () => {
       try {
-        const data = await api.getAuditLog();
-        setEntries(data.entries || []);
+        const [auditData, jobData, actionData] = await Promise.all([
+          api.getAuditLog(),
+          api.getAuditJobs(),
+          api.getReviewActions(),
+        ]);
+        setEntries(auditData.entries || []);
+        setJobs(jobData.jobs || []);
+        setReviewActions(actionData.actions || []);
       } catch (err) {
         console.error('Failed to fetch audit log:', err);
       } finally {
@@ -20,7 +28,7 @@ function AuditLog() {
   }, []);
 
   const downloadAuditLog = () => {
-    const headers = ["Timestamp", "DUT ID", "Lot ID", "Risk Band", "Risk Score", "Confidence %", "Explanation", "Model Version"];
+    const headers = ["Timestamp", "DUT ID", "Lot ID", "Risk Band", "Anomaly Decision", "Risk Score", "Confidence %", "Explanation", "Model Version"];
     const rows = entries.length > 0 ? entries : [
       { timestamp: "2026-09-16 09:42", dut_id: "IC0060", lot_id: "LOT2026B", risk_band: "CRITICAL", risk_score: "87.3", confidence_pct: "0", explanation: "Predicted value approaching safety limit", model_version: "BG-AI-2.0" },
       { timestamp: "2026-09-16 09:38", dut_id: "IC0075", lot_id: "LOT2026B", risk_band: "CRITICAL", risk_score: "87.2", confidence_pct: "0", explanation: "Predicted value approaching safety limit", model_version: "BG-AI-2.0" },
@@ -31,6 +39,7 @@ function AuditLog() {
       entry.dut_id,
       entry.lot_id,
       entry.risk_band,
+      entry.anomaly_decision || 'NORMAL',
       entry.risk_score,
       entry.confidence_pct,
       entry.explanation,
@@ -46,6 +55,30 @@ function AuditLog() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const downloadJobSnapshot = async (jobId) => {
+    try {
+      const payload = await api.getAuditJobResults(jobId);
+      const rows = payload.results || [];
+      if (!rows.length) return;
+      const headers = Object.keys(rows[0]);
+      const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const csv = [
+        headers.map(escapeCsv).join(','),
+        ...rows.map((row) => headers.map((header) => escapeCsv(row[header])).join(',')),
+      ].join('\r\n');
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${jobId}-prediction-results.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download prediction snapshot:', err);
+    }
   };
 
   return (
@@ -68,22 +101,88 @@ function AuditLog() {
         <div className="audit-table-wrapper">
           <table className="audit-table">
             <thead>
-              <tr><th>Timestamp</th><th>DUT ID</th><th>Lot ID</th><th>Risk Band</th><th>Risk Score</th><th>Confidence %</th><th>Explanation</th><th>Model Version</th></tr>
+              <tr><th>Timestamp</th><th>DUT ID</th><th>Lot ID</th><th>Risk Band</th><th>Anomaly Decision</th><th>Risk Score</th><th>Confidence %</th><th>Explanation</th><th>Model Version</th></tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8}>Loading audit log...</td></tr>
+                <tr><td colSpan={9}>Loading audit log...</td></tr>
               ) : entries.length > 0 ? (
                 entries.map((entry, i) => (
                   <tr key={i}>
                     <td>{entry.timestamp}</td><td>{entry.dut_id}</td><td>{entry.lot_id}</td>
                     <td><span className={`risk-${(entry.risk_band || '').toLowerCase()}`}>{entry.risk_band}</span></td>
+                    <td><span className={`anomaly-decision ${(entry.anomaly_decision || 'NORMAL').toLowerCase()}`}>{entry.anomaly_decision || 'NORMAL'}</span></td>
                     <td>{entry.risk_score}</td><td>{entry.confidence_pct}%</td>
                     <td>{entry.explanation}</td><td>{entry.model_version || 'BG-AI-2.0'}</td>
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan={8}>No audit entries found</td></tr>
+                <tr><td colSpan={9}>No audit entries found</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="analysis-section">
+        <div className="panel-header">
+          <div>
+            <span className="panel-label">REVIEW HISTORY</span>
+            <h2>Reviewer Actions</h2>
+            <span className="result-count">Durable decision follow-up</span>
+          </div>
+        </div>
+        <div className="audit-table-wrapper">
+          <table className="audit-table">
+            <thead>
+              <tr><th>Created</th><th>DUT ID</th><th>Lot ID</th><th>Action</th><th>Status</th><th>Job ID</th></tr>
+            </thead>
+            <tbody>
+              {reviewActions.length > 0 ? reviewActions.map((action) => (
+                <tr key={action.action_id}>
+                  <td>{new Date(action.created_at).toLocaleString()}</td>
+                  <td>{action.dut_id}</td>
+                  <td>{action.lot_id}</td>
+                  <td>{action.action}</td>
+                  <td><span className="review-status">{action.status}</span></td>
+                  <td>{action.job_id || '--'}</td>
+                </tr>
+              )) : (
+                <tr><td colSpan={6}>No reviewer actions recorded</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="analysis-section">
+        <div className="panel-header">
+          <div>
+            <span className="panel-label">UPLOAD PROVENANCE</span>
+            <h2>Prediction Jobs</h2>
+            <span className="result-count">Durable input and model metadata</span>
+          </div>
+        </div>
+        <div className="audit-table-wrapper">
+          <table className="audit-table audit-job-table">
+            <thead>
+              <tr><th>Created</th><th>Job ID</th><th>Source</th><th>DUTs</th><th>Lots</th><th>Stage A Flags</th><th>Schema</th><th>Input SHA-256</th><th>Snapshot</th></tr>
+            </thead>
+            <tbody>
+              {jobs.length > 0 ? jobs.map((job) => (
+                <tr key={job.job_id}>
+                  <td>{new Date(job.created_at).toLocaleString()}</td>
+                  <td>{job.job_id}</td>
+                  <td>{job.source_filename}</td>
+                  <td>{job.dut_count}</td>
+                  <td>{job.lot_count}</td>
+                  <td>{job.stage_a_flagged}</td>
+                  <td>{job.feature_schema_version}</td>
+                  <td title={job.input_sha256}>{job.input_sha256?.slice(0, 16)}...</td>
+                  <td><button className="audit-download-button" onClick={() => downloadJobSnapshot(job.job_id)}>Download</button></td>
+                </tr>
+              )) : (
+                <tr><td colSpan={9}>No prediction jobs recorded</td></tr>
               )}
             </tbody>
           </table>
@@ -96,8 +195,8 @@ function AuditLog() {
         </div>
         <div className="audit-info-grid">
           <div className="audit-info-card"><span>Model Version</span><strong>BG-AI-2.0</strong></div>
-          <div className="audit-info-card"><span>Data Type</span><strong>Synthetic Demonstration</strong></div>
-          <div className="audit-info-card"><span>Audit Status</span><strong>Recorded</strong></div>
+          <div className="audit-info-card"><span>Recorded Jobs</span><strong>{jobs.length}</strong></div>
+          <div className="audit-info-card"><span>Audit Status</span><strong>{jobs.length ? 'Persisted' : 'Awaiting upload'}</strong></div>
         </div>
       </section>
     </div>

@@ -38,6 +38,19 @@ def _minmax(x):
     return np.clip((x - lo) / (hi - lo), 0, 1)
 
 
+def _calibration_bounds(x):
+    x = np.asarray(x, dtype=float)
+    return float(np.percentile(x, 1)), float(np.percentile(x, 99))
+
+
+def _scale_with_bounds(x, bounds):
+    x = np.asarray(x, dtype=float)
+    lo, hi = bounds
+    if hi - lo < 1e-9:
+        return np.zeros_like(x)
+    return np.clip((x - lo) / (hi - lo), 0, 1)
+
+
 class HybridAnomalyEnsemble:
     """Fits XGBoost, Random Forest, and PCA-SPC detectors on the
     same feature matrix and exposes a single calibrated ensemble
@@ -59,6 +72,7 @@ class HybridAnomalyEnsemble:
         self.rf_model = RandomForestClassifier(
             n_estimators=200, max_depth=6, random_state=random_state
         )
+        self.calibration_bounds = None
         self._fitted = False
 
     def fit(self, X, y):
@@ -76,8 +90,27 @@ class HybridAnomalyEnsemble:
         self.xgb_model.fit(Xs, y)
         self.rf_model.fit(Xs, y)
 
+        raw_scores = self._raw_scores(X, Xs)
+        self.calibration_bounds = {
+            name: _calibration_bounds(values)
+            for name, values in raw_scores.items()
+        }
+
         self._fitted = True
         return self
+
+    def _raw_scores(self, X, Xs):
+        spc_scores = self.pca_spc.score(X)
+        n_samples = X.shape[0]
+        if _HAS_XGB and self.xgb_model is not None:
+            xgb_raw = self.xgb_model.predict_proba(Xs)[:, 1]
+        else:
+            xgb_raw = np.zeros(n_samples)
+        return {
+            "anomaly_xgboost": xgb_raw,
+            "anomaly_random_forest": self.rf_model.predict_proba(Xs)[:, 1],
+            "anomaly_pca_spc": spc_scores["anomaly_pca_spc"],
+        }
 
     def score(self, X, y=None):
         """Returns a dict of per-detector and ensemble scores.
@@ -92,25 +125,14 @@ class HybridAnomalyEnsemble:
         Xs = self.scaler.transform(X)
         n_samples = X.shape[0]
 
-        # 1. PCA-SPC anomaly score
-        spc_scores = self.pca_spc.score(X)
-        pca_spc_raw = spc_scores["anomaly_pca_spc"]
-
-        # 2. XGBoost: predict_proba for class 1 (anomaly)
-        if _HAS_XGB and self.xgb_model is not None:
-            xgb_proba = self.xgb_model.predict_proba(Xs)[:, 1]
-        else:
-            xgb_proba = np.zeros(n_samples)
-        xgb_raw = xgb_proba
-
-        # 3. Random Forest: predict_proba for class 1 (anomaly)
-        rf_proba = self.rf_model.predict_proba(Xs)[:, 1]
-        rf_raw = rf_proba
+        raw_scores = self._raw_scores(X, Xs)
+        bounds = self.calibration_bounds
+        if bounds is None:
+            bounds = {name: _calibration_bounds(values) for name, values in raw_scores.items()}
 
         scores = {
-            "anomaly_xgboost": _minmax(xgb_raw),
-            "anomaly_random_forest": _minmax(rf_raw),
-            "anomaly_pca_spc": _minmax(pca_spc_raw),
+            name: _scale_with_bounds(values, bounds[name])
+            for name, values in raw_scores.items()
         }
 
         w = self.weights

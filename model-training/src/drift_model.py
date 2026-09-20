@@ -30,6 +30,7 @@ class DriftPredictor:
         self.param_name = param_name
         self.random_state = random_state
         self._build_models()
+        self.interval_scale = 1.0
         self._fitted = False
 
     def _build_models(self):
@@ -52,6 +53,13 @@ class DriftPredictor:
         self.model_mean.fit(X, y)
         self.model_lo.fit(X, y)
         self.model_hi.fit(X, y)
+        mean = self.model_mean.predict(X)
+        lo = self.model_lo.predict(X)
+        hi = self.model_hi.predict(X)
+        half_width = np.maximum(np.abs(hi - lo) / 2.0, 1e-6)
+        residual_ratio = np.abs(y - mean) / half_width
+        self.interval_scale = float(np.quantile(residual_ratio, 0.90))
+        self.interval_scale = max(1.0, self.interval_scale)
         self._fitted = True
         return self
 
@@ -62,6 +70,9 @@ class DriftPredictor:
         lo = self.model_lo.predict(X)
         hi = self.model_hi.predict(X)
         lo, hi = np.minimum(lo, hi), np.maximum(lo, hi)
+        center = (lo + hi) / 2.0
+        half_width = (hi - lo) / 2.0 * getattr(self, "interval_scale", 1.0)
+        lo, hi = center - half_width, center + half_width
         mean = np.clip(mean, lo, hi)
         interval_width = hi - lo
         return {
