@@ -3,8 +3,6 @@
 Physics-informed, explainable PASS/FAIL prediction for component burn-in screening.
 
 [![CI/CD](https://github.com/ISRO-BurnInGuard/burninguard-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/ISRO-BurnInGuard/burninguard-ai/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.0.0-green.svg)](CHANGELOG.md)
 
 BurnInGuard AI 2.0 is an AI-powered component screening system that predicts PASS/FAIL outcomes for burn-in tested components. It combines:
 
@@ -29,7 +27,6 @@ BurnInGuard AI 2.0 is an AI-powered component screening system that predicts PAS
 - [Testing](#testing)
 - [Project Structure](#project-structure)
 - [Contributing](#contributing)
-- [License](#license)
 
 ## Overview
 
@@ -89,7 +86,6 @@ All scripts work on **Windows (CMD)**, **Windows (PowerShell)**, **macOS**, and 
 | PowerShell | `.ps1` files | `scripts\install-dependencies.ps1` |
 | macOS / Linux | `.sh` files | `./scripts/install-dependencies.sh` |
 | Any | npm scripts | `npm run install`, `npm run dev` |
-| Any | Makefile | `make install`, `make dev` |
 
 **PowerShell users:** If a `.ps1` script won't run, execute `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` once.
 
@@ -115,10 +111,6 @@ Start everything:
 ```bash
 # Windows
 npm run dev
-
-# macOS / Linux
-make dev
-```
 
 That's it. Frontend at **http://localhost:3000**, API at **http://localhost:8000**.
 
@@ -171,11 +163,6 @@ cd ../frontend && npx vite --version
 npm run dev
 ```
 
-**macOS / Linux:**
-```bash
-make dev
-```
-
 Starts both backend (port 8000) and frontend (port 3000) together.
 
 ### Step by step
@@ -219,16 +206,22 @@ scripts\train-models.bat
 ### Docker
 
 ```bash
-make up
+docker-compose up
 ```
 
 ### Other Commands
 
-**Windows:** `npm run dev`, `npm run train`, `npm run install`, `npm test`
-
-**macOS / Linux:** `make dev`, `make train`, `make install`, `make test`, `make clean`
-
-**PowerShell:** `scripts\*.ps1` scripts
+| Command | What it does |
+|---------|-------------|
+| `npm run install` | Install all dependencies |
+| `npm run dev` | Start backend + frontend |
+| `npm run train` | Train ML models |
+| `npm run build` | Build frontend |
+| `npm test` | Run all tests |
+| `npm run clean` | Remove generated files |
+| `scripts\*.bat` | Windows CMD direct |
+| `scripts\*.ps1` | PowerShell direct |
+| `scripts\*.sh` | macOS/Linux direct |
 
 ## API Documentation
 
@@ -399,7 +392,6 @@ BurnInGuard-AI/
 │   ├── contributing.md        # Contributing guidelines
 │   ├── deployment.md          # Deployment guides
 │   ├── installation.md        # Installation guide
-│   ├── makefile.md            # Makefile reference
 │   ├── model-training.md      # Model training documentation
 │   └── overview.md            # Project overview
 │
@@ -432,7 +424,6 @@ BurnInGuard-AI/
 │   ├── train-models.bat        # Windows CMD
 │   └── train-models.ps1        # Windows PowerShell
 │
-├── Makefile                    # Cross-platform build targets (Linux/macOS)
 ├── docker-compose.yml         # Docker Compose configuration
 ├── package.json               # Root package.json with workspaces
 └── README.md                  # This file
@@ -445,10 +436,6 @@ BurnInGuard-AI/
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License.
 
 ---
 

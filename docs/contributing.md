@@ -4,7 +4,7 @@
 
 1. Fork the repository
 2. Clone your fork locally
-3. Run `make install` to set up the environment
+3. Run `npm run install` to set up the environment
 4. Create a feature branch
 
 ## Branch Naming

@@ -18,26 +18,23 @@ cd BurnInGuard-AI
 
 ### Automated (Recommended)
 
-Cross-platform entry-point script (auto-detects OS):
+Works on all platforms — Windows, macOS, Linux:
 
 ```bash
-./scripts/install-dependencies
+npm run install
 ```
 
-Or using Makefile:
-
-```bash
-make install
-```
-
-Platform-specific scripts are also available:
+Or use the platform-specific script directly:
 
 ```bash
 # Linux/macOS
 ./scripts/install-dependencies.sh
 
-# Windows
+# Windows (CMD)
 scripts\install-dependencies.bat
+
+# Windows (PowerShell)
+scripts\install-dependencies.ps1
 ```
 
 ### Manual
