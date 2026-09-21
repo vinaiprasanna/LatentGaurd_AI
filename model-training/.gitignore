@@ -2,12 +2,7 @@ __pycache__/
 *.pyc
 *.pyo
 models/*.pkl
-models/*_metrics.json
-outputs/*.csv
-outputs/jobs/
-outputs/audit_jobs.json
-outputs/review_actions.json
-outputs/prediction_output.csv
+outputs/
 .env
 .venv/
 venv/
@@ -20,3 +15,5 @@ env_installed.txt
 .pytest_cache/
 .coverage
 htmlcov/
+*.pyc
+*.pyo
