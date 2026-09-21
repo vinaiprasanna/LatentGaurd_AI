@@ -1,0 +1,937 @@
+"""
+BurnInGuard AI 2.0 -- FastAPI Backend
+=========================================
+REST API for BurnInGuard AI prediction service.
+Run with:  uvicorn main:app --host 0.0.0.0 --port 8000
+"""
+import os
+import sys
+import pickle
+import hashlib
+import json
+import uuid
+from datetime import datetime, timezone
+import pandas as pd
+import numpy as np
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_absolute_error, mean_squared_error, r2_score
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+SRC_DIR = os.path.join(ROOT, "src")
+MODELS_DIR = os.path.join(ROOT, "models")
+sys.path.insert(0, SRC_DIR)
+
+from features import build_dut_features, get_model_feature_columns, PARAMS, get_drift_input_rows
+from explainability import explain_row, build_evidence_chain, build_driver_evidence, recommended_confirmation_test, thermal_counterfactual
+from digital_twin import project_trajectory, remaining_margin
+from data_generator import STATIC_LIMITS
+from risk_engine import compute_risk
+from failure_chatbot import answer_question
+from data_cleaner import clean_and_validate
+
+ANOMALY_MODEL_PATH = os.path.join(MODELS_DIR, "anomaly_ensemble_model.pkl")
+DRIFT_MODEL_PATH = os.path.join(MODELS_DIR, "drift_model.pkl")
+AUDIT_STORE_PATH = os.path.join(ROOT, "outputs", "audit_jobs.json")
+REVIEW_STORE_PATH = os.path.join(ROOT, "outputs", "review_actions.json")
+JOB_RESULTS_DIR = os.path.join(ROOT, "outputs", "jobs")
+
+
+def load_models():
+    if not os.path.exists(ANOMALY_MODEL_PATH) or not os.path.exists(DRIFT_MODEL_PATH):
+        return None, None
+    with open(ANOMALY_MODEL_PATH, "rb") as f:
+        ensemble = pickle.load(f)
+    with open(DRIFT_MODEL_PATH, "rb") as f:
+        drift_models = pickle.load(f)
+    return ensemble, drift_models
+
+
+_models = load_models()
+_active_results = None
+_active_audit_results = None
+_active_raw_data = None
+_model_metrics = None
+_active_test_metrics = None
+_active_cleaning_report = None
+_active_job_id = None
+
+
+def _load_audit_jobs():
+    if not os.path.exists(AUDIT_STORE_PATH):
+        return []
+    try:
+        with open(AUDIT_STORE_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _load_review_actions():
+    if not os.path.exists(REVIEW_STORE_PATH):
+        return []
+    try:
+        with open(REVIEW_STORE_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, list) else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _record_review_action(dut_id: str, lot_id: str, action: str):
+    status_by_action = {
+        "ACKNOWLEDGED": "Acknowledged",
+        "INVESTIGATE": "Under Investigation",
+        "RESOLVE": "Resolved",
+    }
+    if action not in status_by_action:
+        raise ValueError("Unsupported review action")
+    record = {
+        "action_id": f"review_{uuid.uuid4().hex[:12]}",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "job_id": _active_job_id,
+        "dut_id": dut_id,
+        "lot_id": lot_id,
+        "action": action,
+        "status": status_by_action[action],
+    }
+    actions = _load_review_actions()
+    actions.append(record)
+    os.makedirs(os.path.dirname(REVIEW_STORE_PATH), exist_ok=True)
+    with open(REVIEW_STORE_PATH, "w", encoding="utf-8") as handle:
+        json.dump(actions[-500:], handle, indent=2)
+    return record
+
+
+def _record_prediction_job(filename: str, raw_df: pd.DataFrame, cleaned_df: pd.DataFrame, results: pd.DataFrame, report):
+    job_id = f"job_{uuid.uuid4().hex[:12]}"
+    input_hash = hashlib.sha256(raw_df.to_csv(index=False).encode("utf-8")).hexdigest()
+    stage_a_flags = int(results.get("stage_a_flag", pd.Series(dtype=bool)).fillna(False).sum())
+    result_path = os.path.join(JOB_RESULTS_DIR, f"{job_id}.csv")
+    os.makedirs(JOB_RESULTS_DIR, exist_ok=True)
+    results.to_csv(result_path, index=False)
+    record = {
+        "job_id": job_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "source_filename": filename,
+        "input_sha256": input_hash,
+        "model_version": "BG-AI-2.0",
+        "feature_schema_version": "32",
+        "anomaly_threshold": _get_anomaly_threshold(),
+        "rows_received": int(len(raw_df)),
+        "rows_cleaned": int(len(cleaned_df)),
+        "dut_count": int(results["dut_id"].nunique()) if "dut_id" in results else 0,
+        "lot_count": int(results["lot_id"].nunique()) if "lot_id" in results else 0,
+        "stage_a_flagged": stage_a_flags,
+        "risk_counts": results["risk_band"].value_counts().to_dict() if "risk_band" in results else {},
+        "cleaning_report": report.as_dict(),
+        "result_file": os.path.relpath(result_path, ROOT),
+    }
+    jobs = _load_audit_jobs()
+    jobs.append(record)
+    retained_jobs = jobs[-100:]
+    retained_ids = {job["job_id"] for job in retained_jobs}
+    for filename in os.listdir(JOB_RESULTS_DIR):
+        if filename.endswith(".csv") and filename[:-4] not in retained_ids:
+            try:
+                os.remove(os.path.join(JOB_RESULTS_DIR, filename))
+            except OSError:
+                pass
+    os.makedirs(os.path.dirname(AUDIT_STORE_PATH), exist_ok=True)
+    with open(AUDIT_STORE_PATH, "w", encoding="utf-8") as handle:
+        json.dump(retained_jobs, handle, indent=2)
+    return job_id
+
+
+def _get_anomaly_threshold():
+    validation_path = os.path.join(MODELS_DIR, "validation_metrics.json")
+    try:
+        with open(validation_path, "r", encoding="utf-8") as handle:
+            return float(json.load(handle).get("threshold", 0.5))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return 0.5
+
+# ---------------------------------------------------------------------------
+# Prediction logic
+# ---------------------------------------------------------------------------
+
+def run_prediction(df: pd.DataFrame) -> pd.DataFrame:
+    ensemble, drift_models = _models
+    if ensemble is None or drift_models is None:
+        raise RuntimeError("Trained models are not available")
+
+    dut_df = build_dut_features(df)
+    feature_cols = get_model_feature_columns(dut_df)
+
+    missing = [c for c in feature_cols if c not in dut_df.columns]
+    for col in missing:
+        dut_df[col] = 0.0
+
+    X = dut_df[feature_cols].fillna(0).values
+
+    # Anomaly ensemble scores
+    scores = ensemble.score(X)
+    for k, v in scores.items():
+        dut_df[k] = v
+    dut_df["anomaly_decision"] = np.where(
+        dut_df["anomaly_ensemble_score"] >= _get_anomaly_threshold(),
+        "ANOMALY",
+        "NORMAL",
+    )
+
+    # Drift predictions: only the early burn-in signal set is allowed as input.
+    drift_input_df = build_dut_features(get_drift_input_rows(df))
+    feature_cols_for_drift = get_model_feature_columns(drift_input_df)
+    early_feature_cols = [c for c in feature_cols_for_drift if "_0h" in c or "physics_norm_slope" in c
+                           or "arrhenius" in c or "temperature" in c or "_lot_zscore" in c]
+    for p in PARAMS:
+        target_col = f"{p}_last"
+        if target_col not in dut_df.columns:
+            continue
+        y_drift = dut_df[target_col].values
+        Xp = drift_input_df[early_feature_cols].fillna(0).values
+        preds = drift_models[p].predict(Xp)
+        for k, v in preds.items():
+            dut_df[k] = v
+
+    # Digital twin projection
+    twin_records = []
+    for _, row in dut_df.iterrows():
+        rec = {"dut_id": row["dut_id"]}
+        for p in PARAMS:
+            proj = project_trajectory(
+                v0=row[f"{p}_0h"],
+                physics_norm_slope=row[f"{p}_physics_norm_slope"],
+                accel_factor=row["arrhenius_accel_factor"],
+            )
+            margin = remaining_margin(proj, STATIC_LIMITS[p], 500)
+            if margin is None:
+                raise RuntimeError(f"Projection horizon 500h is unavailable for {p}")
+            rec[f"{p}_projected_500h"] = margin["projected_value"]
+            rec[f"{p}_margin_pct_500h"] = margin["margin_pct"]
+        twin_records.append(rec)
+    twin_df = pd.DataFrame(twin_records)
+    dut_df = dut_df.merge(twin_df, on="dut_id", how="left")
+
+    # Risk computation
+    dut_df = compute_risk(dut_df, STATIC_LIMITS, PARAMS)
+    if "stage_a_flag" in dut_df.columns:
+        dut_df["risk_score"] = np.where(
+            dut_df["stage_a_flag"],
+            np.clip(dut_df["risk_score"] + 20.0, 0, 100),
+            dut_df["risk_score"],
+        )
+        dut_df["risk_band"] = dut_df["risk_score"].apply(lambda s: "CRITICAL" if s >= 80 else "HIGH" if s >= 60 else "MEDIUM" if s >= 30 else "LOW")
+        dut_df["predicted_outcome"] = dut_df["risk_band"].apply(
+            lambda b: "FAIL" if b in ("HIGH", "CRITICAL") else "PASS"
+        )
+    dut_df["explanation"] = dut_df.apply(explain_row, axis=1)
+    dut_df["driver_evidence"] = dut_df.apply(build_driver_evidence, axis=1)
+    dut_df["evidence_chain"] = dut_df.apply(build_evidence_chain, axis=1)
+    dut_df["recommended_confirmation_test"] = dut_df.apply(recommended_confirmation_test, axis=1)
+    dut_df["thermal_counterfactual"] = dut_df.apply(thermal_counterfactual, axis=1)
+
+    return dut_df
+
+
+def _inference_rows(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Exclude 168h target rows from inference when a labeled horizon is supplied."""
+    if "checkpoint_h" not in raw_df.columns:
+        return raw_df
+    checkpoints = set(pd.to_numeric(raw_df["checkpoint_h"], errors="coerce").dropna().astype(int))
+    if 168 in checkpoints and len(checkpoints) > 1:
+        early = raw_df[raw_df["checkpoint_h"] < 168].copy()
+        if not early.empty:
+            return early
+    return raw_df
+
+
+def _get_model_metrics():
+    """Return cached training-set diagnostics for the loaded artifacts."""
+    global _model_metrics
+    if _model_metrics is not None:
+        metrics = dict(_model_metrics)
+        if _active_test_metrics is not None:
+            metrics["test"] = _active_test_metrics
+        return metrics
+    if _models[0] is None or _models[1] is None:
+        return {"model_loaded": False}
+
+    training_path = os.path.join(ROOT, "..", "model-training", "data", "large_physics_calibrated_burnin_dataset.csv")
+    if not os.path.exists(training_path):
+        return {"model_loaded": True, "metrics_available": False, "message": "Training dataset is unavailable"}
+
+    raw_df = pd.read_csv(training_path)
+    dut_df = build_dut_features(raw_df)
+    feature_cols = get_model_feature_columns(dut_df)
+    X = dut_df[feature_cols].fillna(0).values
+    ensemble, drift_models = _models
+    scores = ensemble.score(X)
+
+    metrics = {
+        "model_loaded": True,
+        "metrics_available": True,
+        "evaluation_scope": "in-sample training diagnostics; not a held-out validation score",
+        "validation_available": False,
+        "validation_message": "No labeled held-out validation dataset is configured.",
+        "training_rows": int(len(raw_df)),
+        "training_duts": int(len(dut_df)),
+        "feature_count": len(feature_cols),
+        "feature_columns": feature_cols,
+        "anomaly": {
+            "ensemble_mean_score": round(float(scores["anomaly_ensemble_score"].mean()), 4),
+        },
+        "drift": {},
+        "anomaly_feature_importance": [],
+        "drift_feature_importance": {},
+    }
+
+    validation_path = os.path.join(MODELS_DIR, "validation_metrics.json")
+    if os.path.exists(validation_path):
+        try:
+            with open(validation_path, "r", encoding="utf-8") as handle:
+                validation = json.load(handle)
+            metrics["validation"] = validation
+            metrics["validation_available"] = bool(validation.get("available"))
+            metrics["validation_message"] = validation.get("evaluation_scope")
+            metrics["recommended_anomaly_threshold"] = validation.get("threshold", 0.5)
+        except (OSError, json.JSONDecodeError):
+            metrics["validation_message"] = "Validation metrics artifact could not be read."
+
+    drift_validation_path = os.path.join(MODELS_DIR, "drift_validation_metrics.json")
+    if os.path.exists(drift_validation_path):
+        try:
+            with open(drift_validation_path, "r", encoding="utf-8") as handle:
+                metrics["drift_validation"] = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            metrics["drift_validation_message"] = "Drift validation metrics artifact could not be read."
+
+    prediction_path = os.path.join(ROOT, "prediction_input.csv")
+    if os.path.exists(prediction_path):
+        prediction_df = pd.read_csv(prediction_path, usecols=["dut_id"])
+        training_ids = set(raw_df["dut_id"].astype(str))
+        prediction_ids = set(prediction_df["dut_id"].astype(str))
+        metrics["prediction_input"] = {
+            "path": prediction_path,
+            "dut_count": len(prediction_ids),
+            "has_labels": False,
+            "overlap_with_training_duts": len(training_ids & prediction_ids),
+            "is_independent_validation": False,
+            "message": "This file is inference input, not an independent labeled test set.",
+        }
+
+    if "true_latent_defect" in dut_df.columns:
+        y_true = np.asarray(dut_df["true_latent_defect"].to_numpy(dtype=int))
+        y_pred = np.asarray((scores["anomaly_ensemble_score"] >= 0.5).astype(int))
+        metrics["anomaly"].update({
+            "accuracy": round(float(accuracy_score(y_true, y_pred)), 4),
+            "precision": round(float(precision_score(y_true, y_pred, zero_division=0)), 4),
+            "recall": round(float(recall_score(y_true, y_pred, zero_division=0)), 4),
+            "f1": round(float(f1_score(y_true, y_pred, zero_division=0)), 4),
+        })
+
+    anomaly_importance = (
+        ensemble.weights["xgboost"] * ensemble.xgb_model.feature_importances_
+        + ensemble.weights["random_forest"] * ensemble.rf_model.feature_importances_
+    )
+    importance_total = float(anomaly_importance.sum())
+    if importance_total:
+        anomaly_importance = anomaly_importance / importance_total
+    metrics["anomaly_feature_importance"] = [
+        {"feature": name, "importance": round(float(value), 4)}
+        for name, value in sorted(zip(feature_cols, anomaly_importance), key=lambda item: -item[1])[:12]
+    ]
+
+    early_feature_cols = [c for c in feature_cols if "_0h" in c or "physics_norm_slope" in c
+                          or "arrhenius" in c or "temperature" in c or "_lot_zscore" in c]
+    Xp = dut_df[early_feature_cols].fillna(0).values
+    for parameter, model in drift_models.items():
+        target = np.asarray(dut_df[f"{parameter}_last"].to_numpy(dtype=float))
+        prediction = np.asarray(model.predict(Xp)[f"{parameter}_pred_168h"])
+        metrics["drift"][parameter] = {
+            "mae": round(float(mean_absolute_error(target, prediction)), 4),
+            "rmse": round(float(np.sqrt(mean_squared_error(target, prediction))), 4),
+            "r2": round(float(r2_score(target, prediction)), 4),
+        }
+        metrics["drift_feature_importance"][parameter] = [
+            {"feature": name, "importance": round(float(value), 4)}
+            for name, value in list(model.feature_importances(early_feature_cols).items())[:12]
+        ]
+
+    _model_metrics = metrics
+    if _active_test_metrics is not None:
+        metrics["test"] = _active_test_metrics
+    return metrics
+
+
+def _evaluate_uploaded_test(results: pd.DataFrame, raw_df: pd.DataFrame):
+    """Evaluate uploaded test labels and 168h regression targets without retraining."""
+    training_path = os.path.join(ROOT, "..", "model-training", "data", "large_physics_calibrated_burnin_dataset.csv")
+    training_ids = set(pd.read_csv(training_path, usecols=["dut_id"])["dut_id"].astype(str)) if os.path.exists(training_path) else set()
+    test_ids = set(raw_df["dut_id"].astype(str))
+    metrics = {
+        "available": False,
+        "evaluation_scope": "uploaded labeled test dataset; model weights were not retrained",
+        "test_rows": int(len(raw_df)),
+        "test_duts": int(raw_df["dut_id"].nunique()),
+        "has_labels": "true_latent_defect" in raw_df.columns,
+        "overlap_with_training_duts": int(len(training_ids & test_ids)),
+        "is_independent_test": len(training_ids & test_ids) == 0,
+    }
+    if "true_latent_defect" in raw_df.columns:
+        labels = raw_df[["dut_id", "true_latent_defect"]].drop_duplicates("dut_id")
+        evaluated = results.merge(labels, on="dut_id", how="inner", suffixes=("", "_input"))
+        if not evaluated.empty:
+            label_column = "true_latent_defect_input" if "true_latent_defect_input" in evaluated else "true_latent_defect"
+            y_true = np.asarray(evaluated[label_column].to_numpy(dtype=int))
+            y_pred = np.asarray((evaluated["anomaly_ensemble_score"].to_numpy(dtype=float) >= 0.5).astype(int))
+            metrics.update({
+                "available": True,
+                "anomaly_metrics_available": True,
+                "test_duts": int(len(evaluated)),
+                "accuracy": round(float(accuracy_score(y_true, y_pred)), 4),
+                "precision": round(float(precision_score(y_true, y_pred, zero_division=0)), 4),
+                "recall": round(float(recall_score(y_true, y_pred, zero_division=0)), 4),
+                "f1": round(float(f1_score(y_true, y_pred, zero_division=0)), 4),
+                "false_negative_count": int(((y_true == 1) & (y_pred == 0)).sum()),
+                "false_negative_rate": round(float(((y_true == 1) & (y_pred == 0)).sum() / max((y_true == 1).sum(), 1)), 4),
+            })
+    else:
+        metrics["message"] = "No true_latent_defect labels; classification metrics are unavailable."
+
+    complete = raw_df.groupby("dut_id")["checkpoint_h"].max()
+    complete_ids = set(complete[complete >= 168].index.astype(str))
+    drift_results = results[results["dut_id"].astype(str).isin(complete_ids)]
+    actual_168 = raw_df[raw_df["checkpoint_h"] == 168].sort_values("checkpoint_h").groupby("dut_id").tail(1)
+    actual_168 = actual_168.set_index(actual_168["dut_id"].astype(str)) if not actual_168.empty else actual_168
+    drift_metrics = {}
+    for parameter in PARAMS:
+        target_field = f"{parameter}_last"
+        prediction_field = f"{parameter}_pred_168h"
+        if prediction_field in drift_results and not drift_results.empty:
+            prediction = drift_results.set_index(drift_results["dut_id"].astype(str))[prediction_field]
+            prediction = prediction[prediction.index.isin(actual_168.index)]
+            target = actual_168.loc[prediction.index, parameter].astype(float) if not actual_168.empty else pd.Series(dtype=float)
+            prediction = prediction.astype(float)
+            if target.empty:
+                continue
+            parameter_metrics = {
+                "mae": round(float(mean_absolute_error(target, prediction)), 4),
+                "rmse": round(float(np.sqrt(mean_squared_error(target, prediction))), 4),
+                "r2": round(float(r2_score(target, prediction)), 4),
+                "test_duts": int(len(prediction)),
+            }
+            lower_field = f"{parameter}_pred_168h_lo"
+            upper_field = f"{parameter}_pred_168h_hi"
+            if lower_field in drift_results and upper_field in drift_results:
+                indexed_results = drift_results.set_index(drift_results["dut_id"].astype(str))
+                lower = indexed_results.loc[prediction.index, lower_field].astype(float)
+                upper = indexed_results.loc[prediction.index, upper_field].astype(float)
+                parameter_metrics.update({
+                    "interval_coverage": round(float(((target >= lower) & (target <= upper)).mean()), 4),
+                    "mean_interval_width": round(float((upper - lower).mean()), 4),
+                })
+            drift_metrics[parameter] = parameter_metrics
+    metrics["drift"] = drift_metrics
+    metrics["drift_metrics_available"] = bool(drift_metrics)
+    if not drift_metrics:
+        metrics["drift_message"] = "168h measured checkpoints are required to calculate drift test RMSE."
+    metrics["available"] = bool(metrics.get("anomaly_metrics_available") or drift_metrics)
+    return metrics
+
+
+def build_sample_dut_data():
+    """Generate sample DUT data for the dashboard when models are not loaded."""
+    checkpoints = ["0h", "24h", "48h", "72h", "96h", "120h", "144h", "168h"]
+    lots = ["LOT2026A", "LOT2026B", "LOT2026C", "LOT2026D", "LOT2026E", "LOT2026G"]
+    components = []
+    for i in range(1, 13):
+        dut_id = f"DUT-0{i:03d}"
+        lot = lots[i % len(lots)]
+        for j, cp in enumerate(checkpoints):
+            components.append({
+                "dut_id": dut_id,
+                "lot_id": lot,
+                "checkpoint_h": j * 24,
+                "temperature_c": round(110 + np.random.normal(0, 10), 2),
+                "vcc_v": round(5.0 + np.random.normal(0, 0.02), 3),
+                "iddq_uA": round(8 + np.random.exponential(3) + j * 0.5, 3),
+                "leakage_uA": round(2 + np.random.exponential(1) + j * 0.2, 3),
+                "delay_ns": round(5 + np.random.normal(0, 1) + j * 0.3, 3),
+            })
+    return pd.DataFrame(components)
+
+
+# ---------------------------------------------------------------------------
+# FastAPI
+# ---------------------------------------------------------------------------
+
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional, List, Dict, Any
+
+
+def resolve_allowed_origins() -> List[str]:
+    raw_value = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    if raw_value.strip().lower() == "*":
+        return ["*"]
+    origins = [origin.strip() for origin in raw_value.split(",") if origin.strip()]
+    return origins or ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
+def filter_output_columns(results: pd.DataFrame) -> pd.DataFrame:
+    output_cols = [
+        "dut_id", "lot_id", "risk_score", "risk_band",
+        "risk_confidence_pct", "predicted_outcome", "explanation",
+        "evidence_chain", "driver_evidence", "recommended_confirmation_test", "thermal_counterfactual",
+        "anomaly_ensemble_score", "anomaly_score", "checkpoint_h",
+        "anomaly_decision",
+        "temperature_c", "vcc_v", "iddq_uA", "leakage_uA", "delay_ns",
+        "iddq_uA_0h", "leakage_uA_0h", "delay_ns_0h",
+        "iddq_uA_pred_168h", "iddq_uA_pred_168h_lo", "iddq_uA_pred_168h_hi",
+        "leakage_uA_pred_168h", "leakage_uA_pred_168h_lo", "leakage_uA_pred_168h_hi",
+        "delay_ns_pred_168h", "delay_ns_pred_168h_lo", "delay_ns_pred_168h_hi",
+        "iddq_uA_projected_500h", "iddq_uA_margin_pct_500h",
+        "leakage_uA_projected_500h", "leakage_uA_margin_pct_500h",
+        "delay_ns_projected_500h", "delay_ns_margin_pct_500h",
+        "_component_anomaly", "_component_lot_deviation", "_component_drift_rate", "_component_future_margin",
+    ]
+    available = [column for column in output_cols if column in results.columns]
+    return results[available].copy() if available else results.copy()
+
+
+app = FastAPI(
+    title="BurnInGuard AI 2.0",
+    description="Physics-informed, explainable PASS/FAIL prediction for component burn-in screening",
+    version="2.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=resolve_allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class PredictionResponse(BaseModel):
+    dut_id: str
+    lot_id: str
+    risk_score: float
+    risk_band: str
+    risk_confidence_pct: float
+    predicted_outcome: str
+    explanation: str
+
+
+class DutData(BaseModel):
+    dut_id: str
+    lot_id: str
+    risk_score: float
+    risk_band: str
+    risk_confidence_pct: float
+    predicted_outcome: str
+    explanation: str
+    anomaly_score: float
+    checkpoint_h: int
+    temperature_c: float
+    iddq_uA: float
+    leakage_uA: float
+    delay_ns: float
+
+
+class ChatRequest(BaseModel):
+    question: str
+    dut_id: Optional[str] = None
+    history: Optional[List[Dict[str, Any]]] = None
+
+
+class ReviewActionRequest(BaseModel):
+    dut_id: str
+    lot_id: str
+    action: str
+
+
+@app.get("/health")
+def health():
+    return {"status": "healthy", "model_loaded": _models is not None}
+
+
+@app.get("/status")
+def status():
+    global _models
+    return {
+        "model_loaded": _models is not None,
+        "anomaly_ensemble": ANOMALY_MODEL_PATH if _models else None,
+        "drift_model": DRIFT_MODEL_PATH if _models else None,
+    }
+
+
+@app.get("/api/model-metrics")
+def get_model_metrics():
+    """Expose loaded model diagnostics and feature importance for the UI."""
+    return _get_model_metrics()
+
+
+@app.get("/api/data-quality")
+def get_data_quality():
+    """Return the latest uploaded CSV cleaning report."""
+    return _active_cleaning_report or {"available": False, "message": "No CSV has been uploaded."}
+
+
+@app.post("/api/chat")
+def chat_with_cosmo(request: ChatRequest):
+    """Answer a read-only COSMO question using the current prediction results."""
+    if _models is None:
+        raise HTTPException(status_code=503, detail="Trained models are not available")
+
+    try:
+        records = _get_all_duts()
+        results = pd.DataFrame(records)
+        if results.empty:
+            raise HTTPException(status_code=404, detail="No prediction results are available")
+
+        selected = results.iloc[0]
+        if request.dut_id and request.dut_id in results["dut_id"].astype(str).values:
+            selected = results[results["dut_id"].astype(str) == request.dut_id].iloc[0]
+        raw_data = _active_raw_data
+        if raw_data is None:
+            raise HTTPException(status_code=404, detail="No uploaded CSV data is available for COSMO analysis.")
+        response = answer_question(
+            request.question,
+            selected,
+            results=results,
+            chat_history=request.history or [],
+            raw_data=raw_data,
+            model_metrics=_get_model_metrics(),
+        )
+        return {"assistant": "COSMO", "answer": response, "dut_id": selected.get("dut_id")}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"COSMO could not answer: {exc}")
+
+
+@app.get("/api/duts")
+def get_duts():
+    """Get all uploaded DUT results for the dashboard."""
+    duts = _get_all_duts()
+    return {"duts": duts, "model_loaded": bool(_models) and bool(duts)}
+
+
+@app.get("/api/duts/{dut_id}")
+def get_dut(dut_id: str):
+    """Get individual uploaded DUT data and digital twin projection."""
+    duts = _get_all_duts()
+    for dut in duts:
+        if dut["dut_id"] == dut_id:
+            return {"dut": dut, "model_loaded": bool(_models)}
+    return {"dut": {"dut_id": dut_id, "error": "Not found"}, "model_loaded": bool(_models)}
+
+
+def _load_prediction_input_if_available():
+    """Return a readable prediction CSV when present, else None."""
+    path = os.path.join(ROOT, "prediction_input.csv")
+    if not os.path.exists(path):
+        return None
+    try:
+        df = pd.read_csv(path)
+    except Exception:
+        return None
+    if df.empty or not {"dut_id", "lot_id"}.intersection(df.columns):
+        return None
+    return df
+
+
+def _get_active_uploaded_results():
+    """Return only the currently uploaded prediction results; never read the repo-local CSV by default."""
+    return _active_results
+
+
+def _get_all_duts():
+    """Return only the uploaded-data results for prediction and display."""
+    results = _get_active_uploaded_results()
+    if results is None:
+        return []
+    return results.to_dict(orient="records")
+
+
+def _attach_dashboard_telemetry(results: pd.DataFrame, raw_df: pd.DataFrame) -> pd.DataFrame:
+    """Add the latest raw telemetry fields consumed by dashboard views."""
+    telemetry_cols = [
+        "dut_id", "checkpoint_h", "temperature_c", "vcc_v",
+        "iddq_uA", "leakage_uA", "delay_ns",
+    ]
+    available_cols = [column for column in telemetry_cols if column in raw_df.columns]
+    latest = (
+        raw_df.sort_values("checkpoint_h")
+        .groupby("dut_id", as_index=False)
+        .tail(1)[available_cols]
+    )
+    quality_columns = [column for column in ["dut_id", "data_quality_abnormal", "data_quality_flags"] if column in raw_df.columns]
+    quality = raw_df[quality_columns].drop_duplicates("dut_id") if quality_columns else pd.DataFrame(columns=["dut_id"])
+    result_without_telemetry = results.drop(
+        columns=[column for column in available_cols if column != "dut_id" and column in results.columns],
+        errors="ignore",
+    )
+    enriched = result_without_telemetry.merge(latest, on="dut_id", how="left")
+    return enriched.merge(quality, on="dut_id", how="left")
+
+
+def _get_dut_data(dut_id: str):
+    """Get data for a single DUT."""
+    all_duts = _get_all_duts()
+    for dut in all_duts:
+        if dut["dut_id"] == dut_id:
+            return dut
+    return {"dut_id": dut_id, "error": "Not found"}
+
+
+def _get_sample_duts():
+    """Return sample DUT data when models aren't loaded."""
+    checkpoints = ["0h", "24h", "48h", "72h", "96h", "120h", "144h", "168h"]
+    lots = ["LOT2026A", "LOT2026B", "LOT2026C", "LOT2026D", "LOT2026E", "LOT2026G"]
+    duts = []
+    for i in range(1, 13):
+        dut_id = f"DUT-0{i:03d}"
+        lot = lots[i % len(lots)]
+        risk_scores = np.random.uniform(10, 95)
+        band = "CRITICAL" if risk_scores >= 80 else "HIGH" if risk_scores >= 60 else "MEDIUM" if risk_scores >= 30 else "LOW"
+        duts.append({
+            "dut_id": dut_id,
+            "lot_id": lot,
+            "risk_score": round(risk_scores, 1),
+            "risk_band": band,
+            "risk_confidence_pct": round(np.random.uniform(0, 40), 1),
+            "predicted_outcome": "FAIL" if band in ("HIGH", "CRITICAL") else "PASS",
+            "explanation": "Synthetic demonstration data",
+            "anomaly_score": round(risk_scores / 100, 2),
+            "checkpoint_h": 168,
+            "temperature_c": round(110 + np.random.normal(0, 10), 2),
+            "iddq_uA": round(8 + np.random.exponential(3), 3),
+            "leakage_uA": round(2 + np.random.exponential(1), 3),
+            "delay_ns": round(5 + np.random.normal(0, 1), 3),
+        })
+    return duts
+
+
+def _get_sample_dut(dut_id: str):
+    """Return sample DUT data for a single DUT."""
+    all_sample = _get_sample_duts()
+    for dut in all_sample:
+        if dut["dut_id"] == dut_id:
+            return dut
+    return {"dut_id": dut_id, "error": "Not found"}
+
+
+@app.post("/predict", response_model=List[Dict[str, Any]])
+def predict(file: UploadFile = File(...)):
+    global _active_results, _active_audit_results, _active_raw_data, _active_test_metrics, _active_cleaning_report, _active_job_id
+    if not file.filename or not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are accepted")
+
+    try:
+        df = pd.read_csv(file.file)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail="CSV file is empty")
+
+    try:
+        cleaned_df, cleaning_report = clean_and_validate(df)
+        if cleaned_df.empty:
+            raise HTTPException(status_code=400, detail="CSV has no usable telemetry rows after cleaning")
+        results = run_prediction(_inference_rows(cleaned_df))
+        results = _attach_dashboard_telemetry(results, cleaned_df)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+    output_cols = [
+        "dut_id", "lot_id", "risk_score", "risk_band",
+        "risk_confidence_pct", "predicted_outcome", "explanation",
+        "anomaly_ensemble_score", "anomaly_score", "checkpoint_h",
+        "temperature_c", "vcc_v", "iddq_uA", "leakage_uA", "delay_ns",
+        "iddq_uA_pred_168h", "iddq_uA_pred_168h_lo", "iddq_uA_pred_168h_hi",
+        "leakage_uA_pred_168h", "leakage_uA_pred_168h_lo", "leakage_uA_pred_168h_hi",
+        "delay_ns_pred_168h", "delay_ns_pred_168h_lo", "delay_ns_pred_168h_hi",
+        "iddq_uA_projected_500h", "iddq_uA_margin_pct_500h",
+        "leakage_uA_projected_500h", "leakage_uA_margin_pct_500h",
+        "delay_ns_projected_500h", "delay_ns_margin_pct_500h",
+        "_component_anomaly", "_component_lot_deviation", "_component_drift_rate", "_component_future_margin"
+    ]
+    output = filter_output_columns(results)
+    _active_results = output.copy()
+    _active_audit_results = results.copy()
+    _active_raw_data = cleaned_df.copy()
+    _active_test_metrics = _evaluate_uploaded_test(output, cleaned_df)
+    _active_cleaning_report = cleaning_report.as_dict()
+    _active_job_id = _record_prediction_job(file.filename, df, cleaned_df, results, cleaning_report)
+
+    return output.to_dict(orient="records")
+
+
+@app.post("/predict/batch")
+def predict_batch(file: UploadFile = File(...)):
+    global _active_results, _active_audit_results, _active_raw_data, _active_test_metrics, _active_cleaning_report, _active_job_id
+    if not file.filename or not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are accepted")
+
+    try:
+        df = pd.read_csv(file.file)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail="CSV file is empty")
+
+    try:
+        cleaned_df, cleaning_report = clean_and_validate(df)
+        if cleaned_df.empty:
+            raise HTTPException(status_code=400, detail="CSV has no usable telemetry rows after cleaning")
+        results = run_prediction(_inference_rows(cleaned_df))
+        results = _attach_dashboard_telemetry(results, cleaned_df)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+    output_cols = [
+        "dut_id", "lot_id", "risk_score", "risk_band",
+        "risk_confidence_pct", "predicted_outcome", "explanation",
+        "iddq_uA_pred_168h", "leakage_uA_pred_168h", "delay_ns_pred_168h",
+        "iddq_uA_projected_500h", "leakage_uA_projected_500h", "delay_ns_margin_pct_500h",
+        "_component_anomaly", "_component_lot_deviation", "_component_drift_rate", "_component_future_margin"
+    ]
+    output = filter_output_columns(results)
+    _active_results = output.copy()
+    _active_audit_results = results.copy()
+    _active_raw_data = cleaned_df.copy()
+    _active_test_metrics = _evaluate_uploaded_test(output, cleaned_df)
+    _active_cleaning_report = cleaning_report.as_dict()
+    _active_job_id = _record_prediction_job(file.filename, df, cleaned_df, results, cleaning_report)
+
+    output_path = os.path.join(ROOT, "outputs", "prediction_output.csv")
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output.to_csv(output_path, index=False)
+
+    return {
+        "total_duts": len(output),
+        "pass": int((output["predicted_outcome"] == "PASS").sum()),
+        "fail": int((output["predicted_outcome"] == "FAIL").sum()),
+        "output_file": output_path
+    }
+
+
+@app.get("/api/dashboard/stats")
+def get_dashboard_stats():
+    """Return dashboard KPIs for uploaded results only."""
+    all_duts = _get_all_duts()
+    total = len(all_duts)
+    if total == 0:
+        return {
+            "total_components": 0,
+            "anomalies_detected": 0,
+            "high_risk_components": 0,
+            "anomaly_rate": "0%",
+            "pass_rate": "0%",
+            "model_loaded": bool(_models),
+        }
+    fail_count = sum(1 for d in all_duts if d.get("predicted_outcome") == "FAIL")
+    high_risk = sum(1 for d in all_duts if d.get("risk_band") in ("HIGH", "CRITICAL"))
+    return {
+        "total_components": total,
+        "anomalies_detected": high_risk,
+        "high_risk_components": high_risk,
+        "anomaly_rate": f"{(high_risk / total * 100):.2f}%" if total else "0%",
+        "pass_rate": f"{((total - fail_count) / total * 100):.2f}%" if total else "0%",
+        "model_loaded": True,
+    }
+
+
+@app.get("/api/audit-log")
+def get_audit_log():
+    """Get audit log entries."""
+    if _models is None:
+        return {"entries": _get_sample_audit_log()}
+    all_duts = _get_all_duts()
+    entries = []
+    for dut in all_duts:
+        entries.append({
+            "timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+            "dut_id": dut["dut_id"],
+            "lot_id": dut["lot_id"],
+            "risk_band": dut["risk_band"],
+            "anomaly_decision": dut.get("anomaly_decision", "NORMAL"),
+            "risk_score": dut["risk_score"],
+            "confidence_pct": dut["risk_confidence_pct"],
+            "explanation": dut["explanation"],
+            "model_version": "BG-AI-2.0",
+            "_component_anomaly": dut.get("_component_anomaly"),
+            "_component_lot_deviation": dut.get("_component_lot_deviation"),
+            "_component_drift_rate": dut.get("_component_drift_rate"),
+            "_component_future_margin": dut.get("_component_future_margin"),
+        })
+    return {"entries": entries}
+
+
+@app.get("/api/audit-log/export")
+def get_audit_log_export():
+    """Return the complete current prediction frame for audit export."""
+    if _active_audit_results is None or _active_audit_results.empty:
+        return {"rows": [], "row_count": 0, "message": "No uploaded prediction results are available."}
+    export = _active_audit_results.copy()
+    export["model_version"] = "BG-AI-2.0"
+    export["feature_schema_version"] = "32"
+    export["anomaly_threshold"] = _get_anomaly_threshold()
+    export["exported_at"] = datetime.now(timezone.utc).isoformat()
+    export = export.where(pd.notna(export), None)
+    return {"rows": export.to_dict(orient="records"), "row_count": len(export)}
+
+
+@app.get("/api/audit-jobs")
+def get_audit_jobs():
+    """Return durable upload-level provenance records, newest first."""
+    return {"jobs": list(reversed(_load_audit_jobs()))}
+
+
+@app.get("/api/audit-jobs/{job_id}/results")
+def get_audit_job_results(job_id: str):
+    """Return the sanitized prediction snapshot associated with an audit job."""
+    if not job_id.startswith("job_"):
+        raise HTTPException(status_code=400, detail="Invalid job ID")
+    result_path = os.path.join(JOB_RESULTS_DIR, f"{job_id}.csv")
+    if not os.path.isfile(result_path):
+        raise HTTPException(status_code=404, detail="Prediction snapshot not found")
+    try:
+        return {"job_id": job_id, "results": pd.read_csv(result_path).to_dict(orient="records")}
+    except (OSError, ValueError) as error:
+        raise HTTPException(status_code=500, detail=f"Failed to read prediction snapshot: {error}")
+
+
+@app.get("/api/review-actions")
+def get_review_actions():
+    """Return durable reviewer actions, newest first."""
+    return {"actions": list(reversed(_load_review_actions()))}
+
+
+@app.post("/api/review-actions")
+def create_review_action(request: ReviewActionRequest):
+    """Record an acknowledge, investigate, or resolve action for a DUT."""
+    try:
+        return _record_review_action(request.dut_id, request.lot_id, request.action)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+def _get_sample_audit_log():
+    return [
+        {"timestamp": "2026-09-16 09:42", "dut_id": "IC0060", "lot_id": "LOT2026B", "risk_band": "CRITICAL", "risk_score": 87.3, "confidence_pct": 0, "explanation": "Predicted value approaching safety limit", "model_version": "BG-AI-2.0", "_component_anomaly": 0.85, "_component_lot_deviation": 0.32, "_component_drift_rate": 0.67, "_component_future_margin": 0.12},
+        {"timestamp": "2026-09-16 09:38", "dut_id": "IC0075", "lot_id": "LOT2026B", "risk_band": "CRITICAL", "risk_score": 87.2, "confidence_pct": 0, "explanation": "Predicted value approaching safety limit", "model_version": "BG-AI-2.0", "_component_anomaly": 0.82, "_component_lot_deviation": 0.28, "_component_drift_rate": 0.71, "_component_future_margin": 0.15},
+        {"timestamp": "2026-09-16 09:34", "dut_id": "IC0201", "lot_id": "LOT2026E", "risk_band": "CRITICAL", "risk_score": 82.1, "confidence_pct": 0, "explanation": "Significant deviation from lot population", "model_version": "BG-AI-2.0", "_component_anomaly": 0.78, "_component_lot_deviation": 0.45, "_component_drift_rate": 0.53, "_component_future_margin": 0.08},
+        {"timestamp": "2026-09-16 09:30", "dut_id": "IC0042", "lot_id": "LOT2026A", "risk_band": "HIGH", "risk_score": 77.7, "confidence_pct": 32.5, "explanation": "High physics-normalised drift rate", "model_version": "BG-AI-2.0", "_component_anomaly": 0.65, "_component_lot_deviation": 0.21, "_component_drift_rate": 0.79, "_component_future_margin": 0.22},
+    ]

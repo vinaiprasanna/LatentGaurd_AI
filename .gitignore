@@ -9,3 +9,18 @@ node_modules
 prototype-1/
 
 project-trial-2/
+__pycache__/
+*.pyc
+*.pyo
+models/*.pkl
+outputs/*.csv
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.env
+.DS_Store
+*.log
+node_modules/
+frontend/dist/
