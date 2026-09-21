@@ -6,79 +6,42 @@ Physics-informed, explainable PASS/FAIL prediction for component burn-in screeni
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-2.0.0-green.svg)](CHANGELOG.md)
 
-
-## HOW TO RUN (USE MANUAL METHOD IF DOESNT WORK)
-### Install Dependencies
-> Windows
-```bash
-scripts/install-dependencies.bat
-```
-> Linux
-```bash
-source scripts/install-dependencies.sh
-```
-### Train Models
-> Windows
-```bash
-scripts/train-models.bat
-```
-> Linux
-```bash
-source scripts/train-models.sh
-```
-
-### RUN BACKEND (TERMINAL 1)
-> Windows
-```bash
-scripts/run-backend.bat
-```
-> Linux
-```bash
-source scripts/run-backend.sh
-```
-
-
-### RUN FRONTEND (TERMINAL 2)
-> Windows
-```bash
-scripts/run-frontend.bat
-```
-> Linux
-```bash
-source scripts/run-frontend.sh
-```
-
-
-- Frontend: **http://localhost:3000**
-- API: **http://localhost:8000**
-- API Docs: **http://localhost:8000/docs**
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Running the Application](#running-the-application)
-- [API Documentation](#api-documentation)
-- [Project Structure](#project-structure)
-- [Model Training](#model-training)
-- [Configuration](#configuration)
-- [Docker Deployment](#docker-deployment)
-- [Testing](#testing)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Overview
-
 BurnInGuard AI 2.0 is an AI-powered component screening system that predicts PASS/FAIL outcomes for burn-in tested components. It combines:
 
 - **Hybrid Anomaly Ensemble** (XGBoost + Random Forest + PCA-SPC) for anomaly detection
 - **Physics-Informed Drift Models** for predicting component behaviour beyond burn-in
 - **Digital Twin Projection** for fast-forwarding component trajectories to 500h
-- **Risk Fusion Engine** combining anomaly, lot deviation, drift rate, and future margin into a single 0-100 risk score
+- **Risk Fusion Engine** combining anomaly, lot deviation, drift rate, and future margin into a single 0–100 risk score
 - **Explainability Layer** providing plain-language reasons for each prediction
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Installation](#installation)
+- [Running the Application](#running-the-application)
+- [Model Training](#model-training)
+- [API Documentation](#api-documentation)
+- [Configuration](#configuration)
+- [Docker Deployment](#docker-deployment)
+- [Testing](#testing)
+- [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Overview
+
+BurnInGuard AI 2.0 predicts PASS/FAIL outcomes for component burn-in screening using a combination of machine learning and physics-informed models. The system provides:
+
+| Component | Description |
+|-----------|-------------|
+| **Anomaly Ensemble** | Hybrid XGBoost + Random Forest + PCA-SPC for anomaly detection |
+| **Drift Models** | Physics-informed models predicting component behaviour beyond burn-in |
+| **Digital Twin** | Projects component trajectories to 500h with margin analysis |
+| **Risk Engine** | Fuses anomaly, lot deviation, drift, and margin into a 0–100 risk score |
+| **Explainability** | Plain-language explanations and evidence chains for every prediction |
 
 ## Architecture
 
@@ -86,7 +49,6 @@ BurnInGuard AI 2.0 is an AI-powered component screening system that predicts PAS
 ┌─────────────────────────────────────────────────────────┐
 │                    Frontend (React + Vite)               │
 │  Dashboard │ Anomaly Analysis │ Digital Twin │ Explain  │
-│              │                  │               │ Audit   │
 └──────────────────┬──────────────────────────────────────┘
                    │ HTTP/REST API
                    ▼
@@ -99,8 +61,8 @@ BurnInGuard AI 2.0 is an AI-powered component screening system that predicts PAS
                    ▼
 ┌─────────────────────────────────────────────────────────┐
 │                 ML Models (Pickle)                       │
-│  anomaly_ensemble_model.pkl  │ drift_model.pkl           │
-└─────────────────────────────────────────────────────────┘
+│  anomaly_ensemble_model.pkl  │ drift_model.pkl          │
+└──────────────────┬──────────────────────────────────────┘
                    │
                    ▼
 ┌─────────────────────────────────────────────────────────┐
@@ -117,75 +79,88 @@ BurnInGuard AI 2.0 is an AI-powered component screening system that predicts PAS
 - **Git**
 - **Docker** and **Docker Compose** (optional)
 
+## Quick Start
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd BurnInGuard-AI
+
+# Install all dependencies (Linux/macOS)
+./scripts/install-dependencies
+
+# Or use the Makefile
+make install
+```
+
+- Frontend: **http://localhost:3000**
+- API: **http://localhost:8000**
+- API Docs: **http://localhost:8000/docs**
+
+All scripts support Linux, macOS, and Windows (via Git Bash/WSL). Use `./scripts/<command>` or `make <target>`.
+
 ## Installation
 
 ### 1. Clone the repository
 
 ```bash
 git clone <repository-url>
-cd Burninguard_AI
+cd BurnInGuard-AI
 ```
 
-### 2. Install Python dependencies (Backend + Model Training)
+### 2. Install Python dependencies
+
+The backend and model-training packages each have their own `requirements.txt`:
 
 ```bash
-cd backend
-pip install -r requirements.txt
+cd backend && pip install -r requirements.txt
+cd ../model-training && pip install -r requirements.txt
 ```
+
+### 3. Install Node.js dependencies
 
 ```bash
-cd model-training
-pip install -r requirements.txt
+cd ../frontend && npm install
 ```
 
-### 3. Install Node.js dependencies (Frontend)
+Alternatively, use the automated installer script (see [Quick Start](#quick-start)).
 
-```bash
-cd frontend
-npm install
-```
+## Running the Application
 
-### 4. Install root-level dev dependencies (optional)
-
-```bash
-cd ..
-npm install
-```
-
-## Running the Application 
+All scripts work on Linux, macOS, and Windows (via Git Bash/WSL). Use `./scripts/<command>` or `make <target>`.
 
 ### Option A: Individual Processes (Recommended for Development)
 
 Open **three terminal windows**:
 
-**Terminal 1 - Backend API Server:**
+**Terminal 1 — Backend API Server:**
 ```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+./scripts/run-backend
+# or: make dev-backend
 ```
 
-**Terminal 2 - Frontend Dev Server:**
+**Terminal 2 — Frontend Dev Server:**
 ```bash
-cd frontend
-npm install
-npm run dev
+./scripts/run-frontend
+# or: make dev-frontend
 ```
 
-The frontend will be available at **http://localhost:3000** and the API at **http://localhost:8000**.
-
-**Terminal 3 - (Optional) Model Training:**
+**Terminal 3 — (Optional) Model Training:**
 ```bash
-cd model-training
-pip install -r requirements.txt
-python anomaly_ensemble/train.py
-python drift_model/train.py
+./scripts/train-models
+# or: make train
 ```
 
 ### Option B: All at Once
 
 ```bash
-# From the project root (Burnin-Guard/)
+# From the project root
+make dev
+```
+
+Or using npm:
+
+```bash
 npm run dev
 ```
 
@@ -195,7 +170,8 @@ This starts both backend and frontend simultaneously using `concurrently`.
 
 ```bash
 # Start all services
-docker-compose up --build
+make up
+# or: docker-compose up --build
 
 # Start only backend + frontend
 docker-compose up --build backend frontend
@@ -209,18 +185,37 @@ The application will be available at:
 - API: **http://localhost:8000**
 - API Docs: **http://localhost:8000/docs** (Swagger UI)
 
+### Common Makefile Targets
+
+| Target | Description |
+|--------|-------------|
+| `make install` | Install all dependencies |
+| `make dev` | Start backend and frontend |
+| `make dev-backend` | Start backend only |
+| `make dev-frontend` | Start frontend only |
+| `make train` | Train all ML models |
+| `make build` | Build Docker images |
+| `make up` | Start all services with Docker Compose |
+| `make down` | Stop all Docker services |
+| `make logs` | View backend logs |
+| `make test` | Run all tests |
+| `make clean` | Remove generated artifacts |
+
 ## Model Training
 
 Before running predictions, train and export the models:
 
 ```bash
+# Cross-platform (auto-detects OS)
+./scripts/train-models
+
+# Or using Makefile
+make train
+
+# Or manually
 cd model-training
 pip install -r requirements.txt
-
-# Train and export anomaly ensemble
 python anomaly_ensemble/train.py
-
-# Train and export drift model
 python drift_model/train.py
 ```
 
@@ -238,12 +233,17 @@ All API endpoints are available at `http://localhost:8000`. Interactive docs at 
 |--------|----------|-------------|
 | GET | `/health` | Health check |
 | GET | `/status` | Model loading status |
+| GET | `/api/model-metrics` | Model diagnostics and feature importance |
 | GET | `/api/duts` | Get all DUT data with risk scores |
 | GET | `/api/duts/{dut_id}` | Get individual DUT data |
 | GET | `/api/dashboard/stats` | Dashboard KPI statistics |
 | GET | `/api/audit-log` | Get audit log entries |
+| GET | `/api/audit-jobs` | Get audit job provenance records |
+| GET | `/api/review-actions` | Get reviewer actions |
+| POST | `/api/review-actions` | Record a reviewer action |
 | POST | `/predict` | Upload CSV, get predictions |
 | POST | `/predict/batch` | Upload CSV, get summary + save CSV |
+| POST | `/api/chat` | Query COSMO failure chatbot |
 
 ### POST /predict
 
@@ -266,54 +266,13 @@ Same as above but returns summary and saves to `outputs/prediction_output.csv`.
 }
 ```
 
-### GET /api/duts
+### GET /api/model-metrics
 
-Returns all DUT data with computed risk scores.
+Returns loaded model diagnostics including feature importance, training metrics, and drift validation results.
 
 ### GET /api/dashboard/stats
 
-Returns dashboard KPI statistics.
-
-## Project Structure
-
-```
-Burnin-Guard/
-├── backend/                    # FastAPI backend
-│   ├── main.py                # FastAPI app with all endpoints
-│   ├── predict.py             # CLI prediction script
-│   ├── requirements.txt       # Python dependencies
-│   ├── src/                   # ML source modules
-│   │   ├── features.py        # Feature engineering
-│   │   ├── risk_engine.py     # Risk fusion engine
-│   │   ├── digital_twin.py    # Digital twin projection
-│   │   ├── explainability.py  # Plain-language explanations
-│   │   ├── anomaly_ensemble.py # Hybrid anomaly ensemble
-│   │   ├── drift_model.py     # Drift prediction
-│   │   ├── spc.py             # PCA-SPC detector
-│   │   └── data_generator.py  # Synthetic data generator
-│   ├── models/                # Trained model pickles
-│   ├── outputs/               # Prediction outputs
-│   └── prediction_input.csv   # Sample input CSV
-│
-├── frontend/                   # React + Vite frontend
-│   ├── src/
-│   │   ├── api.js             # API service layer
-│   │   ├── App.jsx            # Main app component
-│   │   ├── components/        # Reusable components
-│   │   └── pages/             # Page components
-│   ├── vite.config.js         # Vite config with API proxy
-│   └── package.json
-│
-├── model-training/             # Model training scripts
-│   ├── anomaly_ensemble/
-│   ├── drift_model/
-│   ├── src/                   # Shared source modules
-│   └── requirements.txt
-│
-├── docker-compose.yml         # Docker Compose configuration
-├── package.json               # Root package.json with workspaces
-└── README.md                  # This file
-```
+Returns dashboard KPI statistics including total components, anomaly rate, and pass rate.
 
 ## Configuration
 
@@ -326,6 +285,7 @@ API_HOST=0.0.0.0
 API_PORT=8000
 MODEL_PATH=./models
 OUTPUT_PATH=./outputs
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
 Create a `.env` file in the `frontend/` directory:
@@ -403,6 +363,96 @@ curl http://localhost:8000/health
 curl http://localhost:8000/api/duts
 ```
 
+## Project Structure
+
+```
+BurnInGuard-AI/
+├── backend/                    # FastAPI backend
+│   ├── main.py                # FastAPI app with all endpoints
+│   ├── predict.py             # CLI prediction script
+│   ├── requirements.txt       # Python dependencies
+│   ├── src/                   # ML source modules
+│   │   ├── features.py        # Feature engineering
+│   │   ├── risk_engine.py     # Risk fusion engine
+│   │   ├── digital_twin.py    # Digital twin projection
+│   │   ├── explainability.py  # Plain-language explanations
+│   │   ├── anomaly_ensemble.py # Hybrid anomaly ensemble
+│   │   ├── drift_model.py     # Drift prediction
+│   │   ├── spc.py             # PCA-SPC detector
+│   │   ├── data_generator.py  # Synthetic data generator
+│   │   ├── data_cleaner.py    # CSV cleaning and validation
+│   │   └── failure_chatbot.py # COSMO chatbot integration
+│   ├── models/                # Trained model pickles
+│   ├── outputs/               # Prediction outputs and audit logs
+│   └── prediction_input.csv   # Sample input CSV
+│
+├── docs/                       # Documentation
+│   ├── architecture.md        # System architecture details
+│   ├── api-reference.md       # API endpoint reference
+│   ├── contributing.md        # Contributing guidelines
+│   ├── deployment.md          # Deployment guides
+│   ├── installation.md        # Installation guide
+│   ├── model-training.md      # Model training documentation
+│   └── overview.md            # Project overview
+│
+├── frontend/                   # React + Vite frontend
+│   ├── src/
+│   │   ├── api.js             # API service layer
+│   │   ├── App.jsx            # Main app component
+│   │   ├── components/        # Reusable components
+│   │   └── pages/             # Page components
+│   ├── vite.config.js         # Vite config with API proxy
+│   └── package.json
+│
+├── model-training/             # Model training scripts
+│   ├── anomaly_ensemble/
+│   ├── drift_model/
+│   ├── src/                   # Shared source modules
+│   └── requirements.txt
+│
+├── scripts/                    # Utility scripts (cross-platform)
+│   ├── install-dependencies    # Auto-detects OS (Linux/macOS/Windows)
+│   ├── install-dependencies.sh # POSIX shell variant
+│   ├── install-dependencies.bat # Windows batch variant
+│   ├── run-backend             # Auto-detects OS
+│   ├── run-backend.sh          # POSIX shell variant
+│   ├── run-backend.bat         # Windows batch variant
+│   ├── run-frontend            # Auto-detects OS
+│   ├── run-frontend.sh         # POSIX shell variant
+│   ├── run-frontend.bat        # Windows batch variant
+│   ├── train-models            # Auto-detects OS
+│   ├── train-models.sh         # POSIX shell variant
+│   └── train-models.bat        # Windows batch variant
+├── Makefile                    # Cross-platform build targets (make install, make dev, etc.)
+├── docs/                       # Documentation
+│   ├── architecture.md        # System architecture details
+│   ├── api-reference.md       # API endpoint reference
+│   ├── contributing.md        # Contributing guidelines
+│   ├── deployment.md          # Deployment guides
+│   ├── installation.md        # Installation guide
+│   ├── model-training.md      # Model training documentation
+│   └── overview.md            # Project overview
+│
+├── frontend/                   # React + Vite frontend
+│   ├── src/
+│   │   ├── api.js             # API service layer
+│   │   ├── App.jsx            # Main app component
+│   │   ├── components/        # Reusable components
+│   │   └── pages/             # Page components
+│   ├── vite.config.js         # Vite config with API proxy
+│   └── package.json
+│
+├── model-training/             # Model training scripts
+│   ├── anomaly_ensemble/
+│   ├── drift_model/
+│   ├── src/                   # Shared source modules
+│   └── requirements.txt
+│
+├── docker-compose.yml         # Docker Compose configuration
+├── package.json               # Root package.json with workspaces
+└── README.md                  # This file
+```
+
 ## Contributing
 
 1. Fork the repository
@@ -417,4 +467,4 @@ This project is licensed under the MIT License.
 
 ---
 
-**BurnInGuard AI 2.0** -- Physics-informed, explainable PASS/FAIL prediction for component burn-in screening.
+**BurnInGuard AI 2.0** — Physics-informed, explainable PASS/FAIL prediction for component burn-in screening.

@@ -1,49 +1,43 @@
-
 @echo off
+setlocal enabledelayedexpansion
+
+echo === BurnInGuard AI 2.0 - Dependency Installer ===
+
 cd frontend
-echo Installing frontend dependencies...
-call npm install
+echo [1/4] Installing frontend dependencies...
+npm install --prefer-offline --no-audit
 if errorlevel 1 (
-    echo Frontend dependencies installation failed.
+    echo Frontend dependency installation failed.
     exit /b 1
 )
-cd ..
 
-echo Creating virtual environment...
+cd ..
 if not exist .venv (
+    echo [2/4] Creating virtual environment...
     python -m venv .venv
+    if errorlevel 1 (
+        echo Virtual environment creation failed.
+        exit /b 1
+    )
 )
-if errorlevel 1 (
-    echo Virtual environment creation failed.
-    exit /b 1
-)
-echo Virtual environment created.
 
-
+echo [3/4] Activating virtual environment and installing backend dependencies...
 call .venv\Scripts\activate
-if errorlevel 1 (
-    echo Virtual environment activation failed.
-    exit /b 1
-)
-echo Virtual environment activated.
 cd backend
-
-echo Installing backend dependencies...
 pip install -r requirements.txt
 if errorlevel 1 (
-    echo Backend dependencies installation failed.
+    echo Backend dependency installation failed.
     exit /b 1
 )
-cd ..
-cd model-training
 
-echo Installing model training dependencies...
+echo [4/4] Installing model training dependencies...
+cd ..\model-training
 pip install -r requirements.txt
 if errorlevel 1 (
-    echo Model training dependencies installation failed.
+    echo Model training dependency installation failed.
     exit /b 1
 )
-cd ..
+
 deactivate
 echo Dependencies installed successfully.
-exit /b 1
+exit /b 0

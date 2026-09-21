@@ -1,10 +1,23 @@
 @echo off
+setlocal enabledelayedexpansion
+
+if not exist .venv (
+    echo Error: Virtual environment not found. Run install-dependencies.bat first.
+    exit /b 1
+)
+
 call .venv\Scripts\activate
-echo Activated virtual environment.
 cd model-training
-echo Initiating model training...
-python anomaly_ensemble/train.py
-python drift_model/train.py
-cd ..
-deactivate
-echo Model training completed.
+echo Training anomaly ensemble model...
+python anomaly_ensemble\train.py
+if errorlevel 1 (
+    echo Anomaly ensemble training failed.
+    exit /b 1
+)
+echo Training drift model...
+python drift_model\train.py
+if errorlevel 1 (
+    echo Drift model training failed.
+    exit /b 1
+)
+echo All models trained and exported successfully.

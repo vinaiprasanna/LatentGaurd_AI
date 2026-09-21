@@ -10,12 +10,16 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "cd backend && pip install -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000 --reload",
-    "dev:frontend": "cd frontend && npm install && npm run dev",
+    "dev:backend": "./scripts/run-backend",
+    "dev:frontend": "./scripts/run-frontend",
+    "install": "./scripts/install-dependencies",
+    "serve": "./scripts/run-frontend",
     "build": "cd frontend && npm run build",
-    "train": "cd model-training && pip install -r requirements.txt && python anomaly_ensemble/train.py && python drift_model/train.py",
+    "train": "./scripts/train-models",
     "predict": "cd backend && python predict.py",
-    "prediction:csv": "cd backend && python predict.py --input prediction_input.csv --output outputs/prediction_output.csv"
+    "prediction:csv": "cd backend && python predict.py --input prediction_input.csv --output outputs/prediction_output.csv",
+    "test": "make test",
+    "clean": "make clean"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"

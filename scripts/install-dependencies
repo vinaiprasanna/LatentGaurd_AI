@@ -1,0 +1,60 @@
+#!/usr/bin/env sh
+# Cross-platform entry-point script that auto-detects the OS
+# and dispatches to the appropriate platform-specific script.
+# Works on Linux, macOS, and Windows (Git Bash / WSL).
+
+SCRIPT_DIR=$(dirname "$0")
+BASENAME=$(basename "$0" .sh)
+
+# Detect OS
+case "$(uname -s)" in
+    CYGWIN*|MINGW*|MSYS*|MINGW32*|MINGW64*)
+        OS=windows
+        ;;
+    Darwin*)
+        OS=macos
+        ;;
+    Linux*)
+        OS=linux
+        ;;
+    *)
+        OS=unknown
+        ;;
+esac
+
+# Dispatch based on OS and script name
+case "$BASENAME" in
+    install-dependencies)
+        if [ "$OS" = "windows" ]; then
+            exec "$SCRIPT_DIR/install-dependencies.bat"
+        else
+            exec "$SCRIPT_DIR/install-dependencies.sh"
+        fi
+        ;;
+    run-backend)
+        if [ "$OS" = "windows" ]; then
+            exec "$SCRIPT_DIR/run-backend.bat"
+        else
+            exec "$SCRIPT_DIR/run-backend.sh"
+        fi
+        ;;
+    run-frontend)
+        if [ "$OS" = "windows" ]; then
+            exec "$SCRIPT_DIR/run-frontend.bat"
+        else
+            exec "$SCRIPT_DIR/run-frontend.sh"
+        fi
+        ;;
+    train-models)
+        if [ "$OS" = "windows" ]; then
+            exec "$SCRIPT_DIR/train-models.bat"
+        else
+            exec "$SCRIPT_DIR/train-models.sh"
+        fi
+        ;;
+    *)
+        echo "Unknown script: $BASENAME"
+        echo "Available: install-dependencies, run-backend, run-frontend, train-models"
+        exit 1
+        ;;
+esac
