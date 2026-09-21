@@ -1,17 +1,20 @@
 import { useState } from "react";
 
-function getRiskLevel(score) {
-  if (score >= 0.85) return "CRITICAL";
-  if (score >= 0.65) return "HIGH";
-  if (score >= 0.4) return "MEDIUM";
+function getRiskBand(component, score) {
+  if (component.risk_band) return component.risk_band;
+  if (score >= 80) return "CRITICAL";
+  if (score >= 60) return "HIGH";
+  if (score >= 30) return "MEDIUM";
   return "LOW";
 }
 
-function getRiskColor(score) {
-  if (score >= 0.85) return "#ef4444";
-  if (score >= 0.65) return "#f97316";
-  if (score >= 0.4) return "#eab308";
-  return "#22c55e";
+function getRiskColorForBand(band) {
+  return {
+    LOW: "#22c55e",
+    MEDIUM: "#eab308",
+    HIGH: "#f97316",
+    CRITICAL: "#ef4444",
+  }[band] || "#71869c";
 }
 
 function RiskHeatmap({ anomalyData: propData, onSelect }) {
@@ -62,17 +65,18 @@ function RiskHeatmap({ anomalyData: propData, onSelect }) {
           <div className="tray-grid">
             {data.map((component, index) => {
               const riskScore = getComponentScore(component);
-              const score = Math.min(Math.max(riskScore / 100, 0), 1);
+              const riskBand = getRiskBand(component, riskScore);
+              const riskColor = getRiskColorForBand(riskBand);
               const dutId = component.dut_id || component.dutId;
               const cellId = `${dutId}-${currentCheckpoint}`;
               return (
                   <div key={cellId} className="tray-slot"
                     style={{
-                      '--slot-color': getRiskColor(score),
-                      '--slot-fill': `linear-gradient(145deg, ${getRiskColor(score)}cc, ${getRiskColor(score)}44)`,
+                      '--slot-color': riskColor,
+                      '--slot-fill': `linear-gradient(145deg, ${riskColor}cc, ${riskColor}44)`,
 }}
                     onMouseEnter={(event) => {
-                      setHoveredCell({ dutId, checkpoint: currentCheckpoint, score: riskScore, risk: getRiskLevel(riskScore / 100) });
+                      setHoveredCell({ dutId, checkpoint: currentCheckpoint, score: riskScore, risk: riskBand });
                       const container = event.currentTarget.closest(".heatmap-container");
                       const rect = container.getBoundingClientRect();
                       setTooltipPosition({ x: event.clientX - rect.left + 14, y: event.clientY - rect.top + 14 });
