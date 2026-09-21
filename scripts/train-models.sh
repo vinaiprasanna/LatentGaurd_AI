@@ -9,6 +9,11 @@ if [ ! -d "$PROJECT_ROOT/.venv" ]; then
     exit 1
 fi
 
+if [ ! -f "$PROJECT_ROOT/model-training/env_installed.txt" ]; then
+    echo "Error: Model dependencies not installed. Run install-dependencies.sh first."
+    exit 1
+fi
+
 . "$PROJECT_ROOT/.venv/bin/activate"
 cd "$PROJECT_ROOT/model-training"
 echo "Training anomaly ensemble model..."

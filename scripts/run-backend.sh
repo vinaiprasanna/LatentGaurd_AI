@@ -11,5 +11,5 @@ fi
 
 . "$PROJECT_ROOT/.venv/bin/activate"
 cd "$PROJECT_ROOT/backend"
-echo "Starting BurnInGuard AI 2.0 backend on port 8000..."
+echo "Starting LatentGuard AI backend on port 8000..."
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload

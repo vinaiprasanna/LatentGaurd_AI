@@ -35,8 +35,14 @@ This trains the physics-informed drift models and exports them to `backend/model
 ### Train Both
 
 ```bash
-# Using the provided script
+# Linux/macOS
 ./scripts/train-models.sh
+
+# Windows (CMD)
+scripts\train-models.bat
+
+# Windows (PowerShell)
+scripts\train-models.ps1
 
 # Or manually
 python anomaly_ensemble/train.py && python drift_model/train.py

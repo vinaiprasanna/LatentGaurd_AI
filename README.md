@@ -1,10 +1,8 @@
-# BurnInGuard AI 2.0
+# LatentGuard AI
 
 Physics-informed, explainable PASS/FAIL prediction for component burn-in screening.
 
-[![CI/CD](https://github.com/ISRO-BurnInGuard/burninguard-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/ISRO-BurnInGuard/burninguard-ai/actions/workflows/ci.yml)
-
-BurnInGuard AI 2.0 is an AI-powered component screening system that predicts PASS/FAIL outcomes for burn-in tested components. It combines:
+LatentGuard AI is an AI-powered component screening system that predicts PASS/FAIL outcomes for burn-in tested components. It combines:
 
 - **Hybrid Anomaly Ensemble** (XGBoost + Random Forest + PCA-SPC) for anomaly detection
 - **Physics-Informed Drift Models** for predicting component behaviour beyond burn-in
@@ -30,7 +28,7 @@ BurnInGuard AI 2.0 is an AI-powered component screening system that predicts PAS
 
 ## Overview
 
-BurnInGuard AI 2.0 predicts PASS/FAIL outcomes for component burn-in screening using a combination of machine learning and physics-informed models. The system provides:
+LatentGuard AI predicts PASS/FAIL outcomes for component burn-in screening using a combination of machine learning and physics-informed models. The system provides:
 
 | Component | Description |
 |-----------|-------------|
@@ -80,12 +78,12 @@ BurnInGuard AI 2.0 predicts PASS/FAIL outcomes for component burn-in screening u
 
 All scripts work on **Windows (CMD)**, **Windows (PowerShell)**, **macOS**, and **Linux**.
 
-| Platform | Run script | Example |
-|----------|-----------|---------|
-| Windows CMD | `.bat` files | `scripts\install-dependencies.bat` |
-| PowerShell | `.ps1` files | `scripts\install-dependencies.ps1` |
-| macOS / Linux | `.sh` files | `./scripts/install-dependencies.sh` |
-| Any | npm scripts | `npm run install`, `npm run dev` |
+| Platform | Install | Train | Dev | Other |
+|----------|---------|-------|-----|-------|
+| Windows CMD | `scripts\install-dependencies.bat` | `scripts\train-models.bat` | `scripts\run-backend.bat` + `scripts\run-frontend.bat` | `npm run build`, `npm test`, `npm run clean` |
+| PowerShell | `scripts\install-dependencies.ps1` | `scripts\train-models.ps1` | `scripts\run-backend.ps1` + `scripts\run-frontend.ps1` | `npm run build`, `npm test`, `npm run clean` |
+| macOS / Linux | `./scripts/install-dependencies.sh` | `./scripts/train-models.sh` | `npm run dev` | `npm run build`, `npm test`, `npm run clean` |
+| Cross-platform (npm) | `npm run install:all` | `npm run train` | `npm run dev` | `npm run build`, `npm test`, `npm run clean`, `npm run setup` |
 
 **PowerShell users:** If a `.ps1` script won't run, execute `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` once.
 
@@ -93,26 +91,38 @@ All scripts work on **Windows (CMD)**, **Windows (PowerShell)**, **macOS**, and 
 
 ```bash
 git clone <repository-url>
-cd BurnInGuard-AI
+cd LatentGuard-AI
 ```
 
-Install dependencies (any platform):
+Install dependencies and train models:
 
-```bash
-# Windows (CMD or PowerShell)
+**Windows:**
+```cmd
 scripts\install-dependencies.bat
-
-# macOS / Linux
-./scripts/install-dependencies.sh
+scripts\train-models.bat
+scripts\run-backend.bat
+```
+and then in another terminal:
+```cmd
+scripts\run-frontend.bat
 ```
 
-Start everything:
-
+**macOS / Linux:**
 ```bash
-# Windows
+./scripts/install-dependencies.sh
+./scripts/train-models.sh
 npm run dev
+```
 
 That's it. Frontend at **http://localhost:3000**, API at **http://localhost:8000**.
+
+Or use the quick setup command to do it all at once:
+
+```bash
+npm run setup
+```
+
+This runs: install → train → dev.
 
 ## Installation
 
@@ -120,7 +130,7 @@ That's it. Frontend at **http://localhost:3000**, API at **http://localhost:8000
 
 ```bash
 git clone <repository-url>
-cd BurnInGuard-AI
+cd LatentGuard-AI
 ```
 
 ### Step 2 — Install dependencies
@@ -140,9 +150,9 @@ scripts\install-dependencies.ps1
 ./scripts/install-dependencies.sh
 ```
 
-Or via npm:
+Or cross-platform via npm:
 ```bash
-npm run install
+npm run install:all
 ```
 
 This sets up Python virtual environments and installs all packages automatically.
@@ -156,18 +166,44 @@ cd ../frontend && npx vite --version
 
 ## Running the Application
 
-### Everything at once
+### Quick setup (install → train → run)
+
+**Cross-platform (recommended):**
+```bash
+npm run setup
+```
+This runs: install → train → starts both backend and frontend.
 
 **Windows:**
-```bash
-npm run dev
+```cmd
+scripts\install-dependencies.bat
+scripts\train-models.bat
+scripts\run-backend.bat
+```
+Then in another terminal:
+```cmd
+scripts\run-frontend.bat
 ```
 
-Starts both backend (port 8000) and frontend (port 3000) together.
+**macOS / Linux:**
+```bash
+./scripts/install-dependencies.sh
+./scripts/train-models.sh
+./scripts/run-backend.sh
+```
+Then in another terminal:
+```bash
+./scripts/run-frontend.sh
+```
 
 ### Step by step
 
 **Terminal 1 — Backend:**
+
+**Cross-platform:**
+```bash
+npm run dev:backend
+```
 
 **Windows (CMD):**
 ```cmd
@@ -181,6 +217,11 @@ scripts\run-backend.bat
 
 **Terminal 2 — Frontend:**
 
+**Cross-platform:**
+```bash
+npm run dev:frontend
+```
+
 **Windows (CMD):**
 ```cmd
 scripts\run-frontend.bat
@@ -191,7 +232,12 @@ scripts\run-frontend.bat
 ./scripts/run-frontend.sh
 ```
 
-**Terminal 3 — Model Training (first time only):**
+**Terminal 3 — Train models (first time only):**
+
+**Cross-platform:**
+```bash
+npm run train
+```
 
 **Windows (CMD):**
 ```cmd
@@ -211,17 +257,20 @@ docker-compose up
 
 ### Other Commands
 
-| Command | What it does |
-|---------|-------------|
-| `npm run install` | Install all dependencies |
-| `npm run dev` | Start backend + frontend |
-| `npm run train` | Train ML models |
-| `npm run build` | Build frontend |
-| `npm test` | Run all tests |
-| `npm run clean` | Remove generated files |
-| `scripts\*.bat` | Windows CMD direct |
-| `scripts\*.ps1` | PowerShell direct |
-| `scripts\*.sh` | macOS/Linux direct |
+| Command | What it does | Works on |
+|---------|-------------|----------|
+| `npm run install:all` | Install all dependencies | All platforms |
+| `npm run train` | Train ML models | All platforms |
+| `npm run dev` | Start backend + frontend | All platforms |
+| `npm run dev:backend` | Start backend only | All platforms |
+| `npm run dev:frontend` | Start frontend only | All platforms |
+| `npm run setup` | Quick setup (install → train → dev) | All platforms |
+| `npm run build` | Build frontend | All platforms |
+| `npm test` | Run all tests | All platforms |
+| `npm run clean` | Remove generated files | All platforms |
+| `scripts\*.bat` | Windows CMD direct | Windows CMD |
+| `scripts\*.ps1` | PowerShell direct | Windows PowerShell |
+| `scripts\*.sh` | macOS/Linux direct | macOS / Linux |
 
 ## API Documentation
 
@@ -311,6 +360,25 @@ Input CSV should have one row per checkpoint measurement per DUT:
 
 The `calibration_source` column is automatically excluded from features.
 
+## Model Training
+
+First time setup — train models after installing dependencies:
+
+```bash
+# Cross-platform (recommended)
+npm run train
+
+# Windows (CMD)
+scripts\train-models.bat
+
+# macOS / Linux
+./scripts/train-models.sh
+```
+
+Models are saved to `backend/models/`:
+- `anomaly_ensemble_model.pkl`
+- `drift_model.pkl`
+
 ## Docker Deployment
 
 ### Build Images
@@ -366,7 +434,7 @@ curl http://localhost:8000/api/duts
 ## Project Structure
 
 ```
-BurnInGuard-AI/
+LatentGuard-AI/
 ├── backend/                    # FastAPI backend
 │   ├── main.py                # FastAPI app with all endpoints
 │   ├── predict.py             # CLI prediction script
@@ -439,4 +507,4 @@ BurnInGuard-AI/
 
 ---
 
-**BurnInGuard AI 2.0** — Physics-informed, explainable PASS/FAIL prediction for component burn-in screening.
+**LatentGuard AI** — Physics-informed, explainable PASS/FAIL prediction for component burn-in screening.

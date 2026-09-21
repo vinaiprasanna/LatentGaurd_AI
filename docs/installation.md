@@ -20,10 +20,6 @@ cd BurnInGuard-AI
 
 Works on all platforms — Windows, macOS, Linux:
 
-```bash
-npm run install
-```
-
 Or use the platform-specific script directly:
 
 ```bash
@@ -36,6 +32,8 @@ scripts\install-dependencies.bat
 # Windows (PowerShell)
 scripts\install-dependencies.ps1
 ```
+
+The scripts automatically create a Python virtual environment at the project root (`.venv`) and install all Python dependencies. They skip steps that are already done (e.g., if `node_modules` exists, `npm install` is skipped).
 
 ### Manual
 
@@ -61,8 +59,9 @@ The scripts automatically create a Python virtual environment at the project roo
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Linux
-.\.venv\Scripts\activate    # Windows
+source .venv/bin/activate       # Linux/macOS
+.\.venv\Scripts\activate.bat    # Windows CMD
+& .\.venv\Scripts\Activate.ps1  # Windows PowerShell
 ```
 
 ## Verify Installation

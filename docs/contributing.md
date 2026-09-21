@@ -4,7 +4,7 @@
 
 1. Fork the repository
 2. Clone your fork locally
-3. Run `npm run install` to set up the environment
+3. Run `./scripts/install-dependencies.sh` (macOS/Linux) or `scripts\install-dependencies.bat` (Windows) to install dependencies, then `./scripts/train-models.sh` or `scripts\train-models.bat` to train models
 4. Create a feature branch
 
 ## Branch Naming

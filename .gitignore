@@ -18,24 +18,30 @@ node_modules/
 __pycache__/
 *.pyc
 *.pyo
-models/*.pkl
-outputs/*.csv
-outputs/jobs/
-outputs/audit_jobs.json
-outputs/review_actions.json
+backend/models/*.pkl
+backend/models/*_metrics.json
+backend/outputs/*.csv
+backend/outputs/jobs/
+backend/outputs/audit_jobs.json
+backend/outputs/review_actions.json
+backend/outputs/prediction_output.csv
+model-training/env_installed.txt
+model-training/backend/env_installed.txt
+backend/env_installed.txt
+*.log
+pytest_cache/
+.coverage
+htmlcov/
 
 # Environment files
 .env
 .env.local
 .DS_Store
-*.log
 
 # OS files
 Thumbs.db
 
 # Test artifacts
-.coverage
-htmlcov/
 .pytest_cache/
 
 # Obsolete

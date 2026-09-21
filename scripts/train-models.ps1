@@ -1,12 +1,17 @@
-# BurnInGuard AI 2.0 - Train Models
+# LatentGuard AI - Train Models
 # Works on PowerShell 5.1+
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
 
-if (-not (Test-Path ".venv")) {
+if (-not (Test-Path "$ProjectRoot\.venv")) {
     Write-Host "Error: Virtual environment not found. Run install-dependencies.ps1 first." -ForegroundColor Red
+    exit 1
+}
+
+if (-not (Test-Path "$ProjectRoot\model-training\env_installed.txt")) {
+    Write-Host "Error: Model dependencies not installed. Run install-dependencies.ps1 first." -ForegroundColor Red
     exit 1
 }
 

@@ -1,5 +1,4 @@
 @echo off
-setlocal enabledelayedexpansion
 
 set "SCRIPT_DIR=%~dp0"
 set "PROJECT_ROOT=%SCRIPT_DIR%.."
@@ -9,18 +8,26 @@ if not exist "%PROJECT_ROOT%\.venv\" (
     exit /b 1
 )
 
+if not exist "%PROJECT_ROOT%\model-training\env_installed.txt" (
+    echo Error: Model dependencies not installed. Run install-dependencies.bat first.
+    exit /b 1
+)
+
 pushd "%PROJECT_ROOT%\model-training"
 call "%PROJECT_ROOT%\.venv\Scripts\activate.bat"
 echo Training anomaly ensemble model...
 python anomaly_ensemble\train.py
 if errorlevel 1 (
     echo Anomaly ensemble training failed.
+    popd
     exit /b 1
 )
 echo Training drift model...
 python drift_model\train.py
 if errorlevel 1 (
     echo Drift model training failed.
+    popd
     exit /b 1
 )
 echo All models trained and exported successfully.
+popd
