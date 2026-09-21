@@ -21,9 +21,12 @@ function generateParameterData(parameter, dut) {
   const data = [];
   const start = latest;
   const target = projected;
-  const referencePrediction = Number.isFinite(predictedAt168) ? predictedAt168 : null;
   const firstObserved = Number.isFinite(baseline) ? baseline : latest;
   const measuredHour = Number.isFinite(observedHour) ? observedHour : 24;
+  const projectedAt168 = firstObserved + (target - firstObserved) * (168 / 500);
+  const referencePrediction = Number.isFinite(predictedAt168) && predictedAt168 >= start
+    ? predictedAt168
+    : projectedAt168;
 
   for (let hour = 0; hour <= 500; hour += 24) {
     const measured = hour === 0 ? firstObserved : hour === measuredHour ? latest : null;
