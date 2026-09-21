@@ -13,7 +13,11 @@
 #   make test         - Run all tests
 #   make clean        - Remove generated artifacts
 #
-# On Windows, use: make <target> or run the corresponding .bat file
+# NOTE: Makefile works on Linux and macOS only.
+# Windows users: use npm run commands or scripts/*.bat files.
+#   npm run install    - Install dependencies
+#   npm run dev        - Start backend + frontend
+#   npm run train      - Train models
 
 .PHONY: install dev dev-backend dev-frontend train build up down logs test clean
 

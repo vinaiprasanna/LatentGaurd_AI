@@ -79,149 +79,156 @@ BurnInGuard AI 2.0 predicts PASS/FAIL outcomes for component burn-in screening u
 - **Git**
 - **Docker** and **Docker Compose** (optional)
 
+## Platform Support
+
+All scripts work on **Windows (CMD)**, **Windows (PowerShell)**, **macOS**, and **Linux**.
+
+| Platform | Run script | Example |
+|----------|-----------|---------|
+| Windows CMD | `.bat` files | `scripts\install-dependencies.bat` |
+| PowerShell | `.ps1` files | `scripts\install-dependencies.ps1` |
+| macOS / Linux | `.sh` files | `./scripts/install-dependencies.sh` |
+| Any | npm scripts | `npm run install`, `npm run dev` |
+| Any | Makefile | `make install`, `make dev` |
+
+**PowerShell users:** If a `.ps1` script won't run, execute `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` once.
+
 ## Quick Start
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd BurnInGuard-AI
-
-# Install all dependencies (Linux/macOS)
-./scripts/install-dependencies
-
-# Or use the Makefile
-make install
-```
-
-- Frontend: **http://localhost:3000**
-- API: **http://localhost:8000**
-- API Docs: **http://localhost:8000/docs**
-
-All scripts support Linux, macOS, and Windows (via Git Bash/WSL). Use `./scripts/<command>` or `make <target>`.
-
-## Installation
-
-### 1. Clone the repository
-
-```bash
 git clone <repository-url>
 cd BurnInGuard-AI
 ```
 
-### 2. Install Python dependencies
-
-The backend and model-training packages each have their own `requirements.txt`:
+Install dependencies (any platform):
 
 ```bash
-cd backend && pip install -r requirements.txt
-cd ../model-training && pip install -r requirements.txt
+# Windows (CMD or PowerShell)
+scripts\install-dependencies.bat
+
+# macOS / Linux
+./scripts/install-dependencies.sh
 ```
 
-### 3. Install Node.js dependencies
+Start everything:
 
 ```bash
-cd ../frontend && npm install
-```
+# Windows
+npm run dev
 
-Alternatively, use the automated installer script (see [Quick Start](#quick-start)).
-
-## Running the Application
-
-All scripts work on Linux, macOS, and Windows (via Git Bash/WSL). Use `./scripts/<command>` or `make <target>`.
-
-### Option A: Individual Processes (Recommended for Development)
-
-Open **three terminal windows**:
-
-**Terminal 1 — Backend API Server:**
-```bash
-./scripts/run-backend
-# or: make dev-backend
-```
-
-**Terminal 2 — Frontend Dev Server:**
-```bash
-./scripts/run-frontend
-# or: make dev-frontend
-```
-
-**Terminal 3 — (Optional) Model Training:**
-```bash
-./scripts/train-models
-# or: make train
-```
-
-### Option B: All at Once
-
-```bash
-# From the project root
+# macOS / Linux
 make dev
 ```
 
-Or using npm:
+That's it. Frontend at **http://localhost:3000**, API at **http://localhost:8000**.
 
+## Installation
+
+### Step 1 — Clone the repo
+
+```bash
+git clone <repository-url>
+cd BurnInGuard-AI
+```
+
+### Step 2 — Install dependencies
+
+**Windows (CMD):**
+```cmd
+scripts\install-dependencies.bat
+```
+
+**Windows (PowerShell):**
+```powershell
+scripts\install-dependencies.ps1
+```
+
+**macOS / Linux:**
+```bash
+./scripts/install-dependencies.sh
+```
+
+Or via npm:
+```bash
+npm run install
+```
+
+This sets up Python virtual environments and installs all packages automatically.
+
+### Step 3 — Verify
+
+```bash
+cd backend && python -c "import fastapi; print('OK')"
+cd ../frontend && npx vite --version
+```
+
+## Running the Application
+
+### Everything at once
+
+**Windows:**
 ```bash
 npm run dev
 ```
 
-This starts both backend and frontend simultaneously using `concurrently`.
+**macOS / Linux:**
+```bash
+make dev
+```
 
-### Option C: Docker Compose
+Starts both backend (port 8000) and frontend (port 3000) together.
+
+### Step by step
+
+**Terminal 1 — Backend:**
+
+**Windows (CMD):**
+```cmd
+scripts\run-backend.bat
+```
+
+**macOS / Linux:**
+```bash
+./scripts/run-backend.sh
+```
+
+**Terminal 2 — Frontend:**
+
+**Windows (CMD):**
+```cmd
+scripts\run-frontend.bat
+```
+
+**macOS / Linux:**
+```bash
+./scripts/run-frontend.sh
+```
+
+**Terminal 3 — Model Training (first time only):**
+
+**Windows (CMD):**
+```cmd
+scripts\train-models.bat
+```
+
+**macOS / Linux:**
+```bash
+./scripts/train-models.sh
+```
+
+### Docker
 
 ```bash
-# Start all services
 make up
-# or: docker-compose up --build
-
-# Start only backend + frontend
-docker-compose up --build backend frontend
-
-# Start training service separately
-docker-compose up --build --profile training model-training
 ```
 
-The application will be available at:
-- Frontend: **http://localhost:3000**
-- API: **http://localhost:8000**
-- API Docs: **http://localhost:8000/docs** (Swagger UI)
+### Other Commands
 
-### Common Makefile Targets
+**Windows:** `npm run dev`, `npm run train`, `npm run install`, `npm test`
 
-| Target | Description |
-|--------|-------------|
-| `make install` | Install all dependencies |
-| `make dev` | Start backend and frontend |
-| `make dev-backend` | Start backend only |
-| `make dev-frontend` | Start frontend only |
-| `make train` | Train all ML models |
-| `make build` | Build Docker images |
-| `make up` | Start all services with Docker Compose |
-| `make down` | Stop all Docker services |
-| `make logs` | View backend logs |
-| `make test` | Run all tests |
-| `make clean` | Remove generated artifacts |
+**macOS / Linux:** `make dev`, `make train`, `make install`, `make test`, `make clean`
 
-## Model Training
-
-Before running predictions, train and export the models:
-
-```bash
-# Cross-platform (auto-detects OS)
-./scripts/train-models
-
-# Or using Makefile
-make train
-
-# Or manually
-cd model-training
-pip install -r requirements.txt
-python anomaly_ensemble/train.py
-python drift_model/train.py
-```
-
-Models are exported to `backend/models/`:
-- `anomaly_ensemble_model.pkl`
-- `drift_model.pkl`
+**PowerShell:** `scripts\*.ps1` scripts
 
 ## API Documentation
 
@@ -392,6 +399,7 @@ BurnInGuard-AI/
 │   ├── contributing.md        # Contributing guidelines
 │   ├── deployment.md          # Deployment guides
 │   ├── installation.md        # Installation guide
+│   ├── makefile.md            # Makefile reference
 │   ├── model-training.md      # Model training documentation
 │   └── overview.md            # Project overview
 │
@@ -410,44 +418,21 @@ BurnInGuard-AI/
 │   ├── src/                   # Shared source modules
 │   └── requirements.txt
 │
-├── scripts/                    # Utility scripts (cross-platform)
-│   ├── install-dependencies    # Auto-detects OS (Linux/macOS/Windows)
-│   ├── install-dependencies.sh # POSIX shell variant
-│   ├── install-dependencies.bat # Windows batch variant
-│   ├── run-backend             # Auto-detects OS
-│   ├── run-backend.sh          # POSIX shell variant
-│   ├── run-backend.bat         # Windows batch variant
-│   ├── run-frontend            # Auto-detects OS
-│   ├── run-frontend.sh         # POSIX shell variant
-│   ├── run-frontend.bat        # Windows batch variant
-│   ├── train-models            # Auto-detects OS
-│   ├── train-models.sh         # POSIX shell variant
-│   └── train-models.bat        # Windows batch variant
-├── Makefile                    # Cross-platform build targets (make install, make dev, etc.)
-├── docs/                       # Documentation
-│   ├── architecture.md        # System architecture details
-│   ├── api-reference.md       # API endpoint reference
-│   ├── contributing.md        # Contributing guidelines
-│   ├── deployment.md          # Deployment guides
-│   ├── installation.md        # Installation guide
-│   ├── model-training.md      # Model training documentation
-│   └── overview.md            # Project overview
+├── scripts/                    # Scripts for all platforms
+│   ├── install-dependencies.sh # macOS / Linux
+│   ├── install-dependencies.bat # Windows CMD
+│   ├── install-dependencies.ps1 # Windows PowerShell
+│   ├── run-backend.sh          # macOS / Linux
+│   ├── run-backend.bat         # Windows CMD
+│   ├── run-backend.ps1         # Windows PowerShell
+│   ├── run-frontend.sh         # macOS / Linux
+│   ├── run-frontend.bat        # Windows CMD
+│   ├── run-frontend.ps1        # Windows PowerShell
+│   ├── train-models.sh         # macOS / Linux
+│   ├── train-models.bat        # Windows CMD
+│   └── train-models.ps1        # Windows PowerShell
 │
-├── frontend/                   # React + Vite frontend
-│   ├── src/
-│   │   ├── api.js             # API service layer
-│   │   ├── App.jsx            # Main app component
-│   │   ├── components/        # Reusable components
-│   │   └── pages/             # Page components
-│   ├── vite.config.js         # Vite config with API proxy
-│   └── package.json
-│
-├── model-training/             # Model training scripts
-│   ├── anomaly_ensemble/
-│   ├── drift_model/
-│   ├── src/                   # Shared source modules
-│   └── requirements.txt
-│
+├── Makefile                    # Cross-platform build targets (Linux/macOS)
 ├── docker-compose.yml         # Docker Compose configuration
 ├── package.json               # Root package.json with workspaces
 └── README.md                  # This file

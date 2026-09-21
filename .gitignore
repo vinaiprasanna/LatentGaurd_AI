@@ -40,3 +40,6 @@ htmlcov/
 
 # Obsolete
 prototype-1/
+
+# PowerShell
+*.ps1~

@@ -1,13 +1,16 @@
 @echo off
 setlocal enabledelayedexpansion
 
-if not exist .venv (
+set "SCRIPT_DIR=%~dp0"
+set "PROJECT_ROOT=%SCRIPT_DIR%.."
+
+if not exist "%PROJECT_ROOT%\.venv\" (
     echo Error: Virtual environment not found. Run install-dependencies.bat first.
     exit /b 1
 )
 
-call .venv\Scripts\activate
-cd model-training
+pushd "%PROJECT_ROOT%\model-training"
+call "%PROJECT_ROOT%\.venv\Scripts\activate.bat"
 echo Training anomaly ensemble model...
 python anomaly_ensemble\train.py
 if errorlevel 1 (

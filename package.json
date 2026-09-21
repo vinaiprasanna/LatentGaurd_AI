@@ -10,16 +10,16 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "./scripts/run-backend",
-    "dev:frontend": "./scripts/run-frontend",
-    "install": "./scripts/install-dependencies",
-    "serve": "./scripts/run-frontend",
+    "dev:backend": "call scripts\\run-backend.bat",
+    "dev:frontend": "call scripts\\run-frontend.bat",
+    "install": "call scripts\\install-dependencies.bat",
+    "serve": "call scripts\\run-frontend.bat",
     "build": "cd frontend && npm run build",
-    "train": "./scripts/train-models",
+    "train": "call scripts\\train-models.bat",
     "predict": "cd backend && python predict.py",
     "prediction:csv": "cd backend && python predict.py --input prediction_input.csv --output outputs/prediction_output.csv",
-    "test": "make test",
-    "clean": "make clean"
+    "test": "cd backend && python -m pytest tests/ -v && cd frontend && npm test",
+    "clean": "cd backend && del /s /q outputs\\*.csv outputs\\jobs\\ outputs\\audit_jobs.json outputs\\review_actions.json models\\*.pkl && cd frontend && rmdir /s /q dist 2>nul"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"
