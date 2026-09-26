@@ -1,84 +1,42 @@
-# BurnInGuard AI 2.0
+# LatentGuard AI
 
 Physics-informed, explainable PASS/FAIL prediction for component burn-in screening.
 
-[![CI/CD](https://github.com/ISRO-BurnInGuard/burninguard-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/ISRO-BurnInGuard/burninguard-ai/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.0.0-green.svg)](CHANGELOG.md)
+LatentGuard AI is an AI-powered component screening system that predicts PASS/FAIL outcomes for burn-in tested components. It combines:
 
-
-## HOW TO RUN (USE MANUAL METHOD IF DOESNT WORK)
-### Install Dependencies
-> Windows
-```bash
-scripts/install-dependencies.bat
-```
-> Linux
-```bash
-source scripts/install-dependencies.sh
-```
-### Train Models
-> Windows
-```bash
-scripts/train-models.bat
-```
-> Linux
-```bash
-source scripts/train-models.sh
-```
-
-### RUN BACKEND (TERMINAL 1)
-> Windows
-```bash
-scripts/run-backend.bat
-```
-> Linux
-```bash
-source scripts/run-backend.sh
-```
-
-
-### RUN FRONTEND (TERMINAL 2)
-> Windows
-```bash
-scripts/run-frontend.bat
-```
-> Linux
-```bash
-source scripts/run-frontend.sh
-```
-
-
-- Frontend: **http://localhost:3000**
-- API: **http://localhost:8000**
-- API Docs: **http://localhost:8000/docs**
+- **Hybrid Anomaly Ensemble** (XGBoost + Random Forest + PCA-SPC) for anomaly detection
+- **Physics-Informed Drift Models** for predicting component behaviour beyond burn-in
+- **Digital Twin Projection** for fast-forwarding component trajectories to 500h
+- **Risk Fusion Engine** combining anomaly, lot deviation, drift rate, and future margin into a single 0–100 risk score
+- **Explainability Layer** providing plain-language reasons for each prediction
 
 ## Table of Contents
 
 - [Overview](#overview)
 - [Architecture](#architecture)
-- [Quick Start](#quick-start)
 - [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
 - [Installation](#installation)
 - [Running the Application](#running-the-application)
-- [API Documentation](#api-documentation)
-- [Project Structure](#project-structure)
 - [Model Training](#model-training)
+- [API Documentation](#api-documentation)
 - [Configuration](#configuration)
 - [Docker Deployment](#docker-deployment)
 - [Testing](#testing)
+- [Project Structure](#project-structure)
 - [Contributing](#contributing)
-- [License](#license)
 
 ## Overview
 
-BurnInGuard AI 2.0 is an AI-powered component screening system that predicts PASS/FAIL outcomes for burn-in tested components. It combines:
+LatentGuard AI predicts PASS/FAIL outcomes for component burn-in screening using a combination of machine learning and physics-informed models. The system provides:
 
-- **Hybrid Anomaly Ensemble** (XGBoost + Random Forest + PCA-SPC) for anomaly detection
-- **Physics-Informed Drift Models** for predicting component behaviour beyond burn-in
-- **Digital Twin Projection** for fast-forwarding component trajectories to 500h
-- **Risk Fusion Engine** combining anomaly, lot deviation, drift rate, and future margin into a single 0-100 risk score
-- **Explainability Layer** providing plain-language reasons for each prediction
+| Component | Description |
+|-----------|-------------|
+| **Anomaly Ensemble** | Hybrid XGBoost + Random Forest + PCA-SPC for anomaly detection |
+| **Drift Models** | Physics-informed models predicting component behaviour beyond burn-in |
+| **Digital Twin** | Projects component trajectories to 500h with margin analysis |
+| **Risk Engine** | Fuses anomaly, lot deviation, drift, and margin into a 0–100 risk score |
+| **Explainability** | Plain-language explanations and evidence chains for every prediction |
 
 ## Architecture
 
@@ -86,7 +44,6 @@ BurnInGuard AI 2.0 is an AI-powered component screening system that predicts PAS
 ┌─────────────────────────────────────────────────────────┐
 │                    Frontend (React + Vite)               │
 │  Dashboard │ Anomaly Analysis │ Digital Twin │ Explain  │
-│              │                  │               │ Audit   │
 └──────────────────┬──────────────────────────────────────┘
                    │ HTTP/REST API
                    ▼
@@ -99,8 +56,8 @@ BurnInGuard AI 2.0 is an AI-powered component screening system that predicts PAS
                    ▼
 ┌─────────────────────────────────────────────────────────┐
 │                 ML Models (Pickle)                       │
-│  anomaly_ensemble_model.pkl  │ drift_model.pkl           │
-└─────────────────────────────────────────────────────────┘
+│  anomaly_ensemble_model.pkl  │ drift_model.pkl          │
+└──────────────────┬──────────────────────────────────────┘
                    │
                    ▼
 ┌─────────────────────────────────────────────────────────┐
@@ -117,116 +74,203 @@ BurnInGuard AI 2.0 is an AI-powered component screening system that predicts PAS
 - **Git**
 - **Docker** and **Docker Compose** (optional)
 
-## Installation
+## Platform Support
 
-### 1. Clone the repository
+All scripts work on **Windows (CMD)**, **Windows (PowerShell)**, **macOS**, and **Linux**.
+
+| Platform | Install | Train | Dev | Other |
+|----------|---------|-------|-----|-------|
+| Windows CMD | `scripts\install-dependencies.bat` | `scripts\train-models.bat` | `scripts\run-backend.bat` + `scripts\run-frontend.bat` | `npm run build`, `npm test`, `npm run clean` |
+| PowerShell | `scripts\install-dependencies.ps1` | `scripts\train-models.ps1` | `scripts\run-backend.ps1` + `scripts\run-frontend.ps1` | `npm run build`, `npm test`, `npm run clean` |
+| macOS / Linux | `./scripts/install-dependencies.sh` | `./scripts/train-models.sh` | `npm run dev` | `npm run build`, `npm test`, `npm run clean` |
+| Cross-platform (npm) | `npm run install:all` | `npm run train` | `npm run dev` | `npm run build`, `npm test`, `npm run clean`, `npm run setup` |
+
+**PowerShell users:** If a `.ps1` script won't run, execute `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` once.
+
+## Quick Start
 
 ```bash
 git clone <repository-url>
-cd Burninguard_AI
+cd LatentGuard-AI
 ```
 
-### 2. Install Python dependencies (Backend + Model Training)
+Install dependencies and train models:
 
-```bash
-cd backend
-pip install -r requirements.txt
+**Windows:**
+```cmd
+scripts\install-dependencies.bat
+scripts\train-models.bat
+scripts\run-backend.bat
+```
+and then in another terminal:
+```cmd
+scripts\run-frontend.bat
 ```
 
+**macOS / Linux:**
 ```bash
-cd model-training
-pip install -r requirements.txt
-```
-
-### 3. Install Node.js dependencies (Frontend)
-
-```bash
-cd frontend
-npm install
-```
-
-### 4. Install root-level dev dependencies (optional)
-
-```bash
-cd ..
-npm install
-```
-
-## Running the Application 
-
-### Option A: Individual Processes (Recommended for Development)
-
-Open **three terminal windows**:
-
-**Terminal 1 - Backend API Server:**
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-**Terminal 2 - Frontend Dev Server:**
-```bash
-cd frontend
-npm install
+./scripts/install-dependencies.sh
+./scripts/train-models.sh
 npm run dev
 ```
 
-The frontend will be available at **http://localhost:3000** and the API at **http://localhost:8000**.
+That's it. Frontend at **http://localhost:3000**, API at **http://localhost:8000**.
 
-**Terminal 3 - (Optional) Model Training:**
-```bash
-cd model-training
-pip install -r requirements.txt
-python anomaly_ensemble/train.py
-python drift_model/train.py
-```
-
-### Option B: All at Once
+Or use the quick setup command to do it all at once:
 
 ```bash
-# From the project root (Burnin-Guard/)
-npm run dev
+npm run setup
 ```
 
-This starts both backend and frontend simultaneously using `concurrently`.
+This runs: install → train → dev.
 
-### Option C: Docker Compose
+## Installation
+
+### Step 1 — Clone the repo
 
 ```bash
-# Start all services
-docker-compose up --build
-
-# Start only backend + frontend
-docker-compose up --build backend frontend
-
-# Start training service separately
-docker-compose up --build --profile training model-training
+git clone <repository-url>
+cd LatentGuard-AI
 ```
 
-The application will be available at:
-- Frontend: **http://localhost:3000**
-- API: **http://localhost:8000**
-- API Docs: **http://localhost:8000/docs** (Swagger UI)
+### Step 2 — Install dependencies
 
-## Model Training
+**Windows (CMD):**
+```cmd
+scripts\install-dependencies.bat
+```
 
-Before running predictions, train and export the models:
+**Windows (PowerShell):**
+```powershell
+scripts\install-dependencies.ps1
+```
+
+**macOS / Linux:**
+```bash
+./scripts/install-dependencies.sh
+```
+
+Or cross-platform via npm:
+```bash
+npm run install:all
+```
+
+This sets up Python virtual environments and installs all packages automatically.
+
+### Step 3 — Verify
 
 ```bash
-cd model-training
-pip install -r requirements.txt
-
-# Train and export anomaly ensemble
-python anomaly_ensemble/train.py
-
-# Train and export drift model
-python drift_model/train.py
+cd backend && python -c "import fastapi; print('OK')"
+cd ../frontend && npx vite --version
 ```
 
-Models are exported to `backend/models/`:
-- `anomaly_ensemble_model.pkl`
-- `drift_model.pkl`
+## Running the Application
+
+### Quick setup (install → train → run)
+
+**Cross-platform (recommended):**
+```bash
+npm run setup
+```
+This runs: install → train → starts both backend and frontend.
+
+**Windows:**
+```cmd
+scripts\install-dependencies.bat
+scripts\train-models.bat
+scripts\run-backend.bat
+```
+Then in another terminal:
+```cmd
+scripts\run-frontend.bat
+```
+
+**macOS / Linux:**
+```bash
+./scripts/install-dependencies.sh
+./scripts/train-models.sh
+./scripts/run-backend.sh
+```
+Then in another terminal:
+```bash
+./scripts/run-frontend.sh
+```
+
+### Step by step
+
+**Terminal 1 — Backend:**
+
+**Cross-platform:**
+```bash
+npm run dev:backend
+```
+
+**Windows (CMD):**
+```cmd
+scripts\run-backend.bat
+```
+
+**macOS / Linux:**
+```bash
+./scripts/run-backend.sh
+```
+
+**Terminal 2 — Frontend:**
+
+**Cross-platform:**
+```bash
+npm run dev:frontend
+```
+
+**Windows (CMD):**
+```cmd
+scripts\run-frontend.bat
+```
+
+**macOS / Linux:**
+```bash
+./scripts/run-frontend.sh
+```
+
+**Terminal 3 — Train models (first time only):**
+
+**Cross-platform:**
+```bash
+npm run train
+```
+
+**Windows (CMD):**
+```cmd
+scripts\train-models.bat
+```
+
+**macOS / Linux:**
+```bash
+./scripts/train-models.sh
+```
+
+### Docker
+
+```bash
+docker-compose up
+```
+
+### Other Commands
+
+| Command | What it does | Works on |
+|---------|-------------|----------|
+| `npm run install:all` | Install all dependencies | All platforms |
+| `npm run train` | Train ML models | All platforms |
+| `npm run dev` | Start backend + frontend | All platforms |
+| `npm run dev:backend` | Start backend only | All platforms |
+| `npm run dev:frontend` | Start frontend only | All platforms |
+| `npm run setup` | Quick setup (install → train → dev) | All platforms |
+| `npm run build` | Build frontend | All platforms |
+| `npm test` | Run all tests | All platforms |
+| `npm run clean` | Remove generated files | All platforms |
+| `scripts\*.bat` | Windows CMD direct | Windows CMD |
+| `scripts\*.ps1` | PowerShell direct | Windows PowerShell |
+| `scripts\*.sh` | macOS/Linux direct | macOS / Linux |
 
 ## API Documentation
 
@@ -238,12 +282,17 @@ All API endpoints are available at `http://localhost:8000`. Interactive docs at 
 |--------|----------|-------------|
 | GET | `/health` | Health check |
 | GET | `/status` | Model loading status |
+| GET | `/api/model-metrics` | Model diagnostics and feature importance |
 | GET | `/api/duts` | Get all DUT data with risk scores |
 | GET | `/api/duts/{dut_id}` | Get individual DUT data |
 | GET | `/api/dashboard/stats` | Dashboard KPI statistics |
 | GET | `/api/audit-log` | Get audit log entries |
+| GET | `/api/audit-jobs` | Get audit job provenance records |
+| GET | `/api/review-actions` | Get reviewer actions |
+| POST | `/api/review-actions` | Record a reviewer action |
 | POST | `/predict` | Upload CSV, get predictions |
 | POST | `/predict/batch` | Upload CSV, get summary + save CSV |
+| POST | `/api/chat` | Query COSMO failure chatbot |
 
 ### POST /predict
 
@@ -266,54 +315,13 @@ Same as above but returns summary and saves to `outputs/prediction_output.csv`.
 }
 ```
 
-### GET /api/duts
+### GET /api/model-metrics
 
-Returns all DUT data with computed risk scores.
+Returns loaded model diagnostics including feature importance, training metrics, and drift validation results.
 
 ### GET /api/dashboard/stats
 
-Returns dashboard KPI statistics.
-
-## Project Structure
-
-```
-Burnin-Guard/
-├── backend/                    # FastAPI backend
-│   ├── main.py                # FastAPI app with all endpoints
-│   ├── predict.py             # CLI prediction script
-│   ├── requirements.txt       # Python dependencies
-│   ├── src/                   # ML source modules
-│   │   ├── features.py        # Feature engineering
-│   │   ├── risk_engine.py     # Risk fusion engine
-│   │   ├── digital_twin.py    # Digital twin projection
-│   │   ├── explainability.py  # Plain-language explanations
-│   │   ├── anomaly_ensemble.py # Hybrid anomaly ensemble
-│   │   ├── drift_model.py     # Drift prediction
-│   │   ├── spc.py             # PCA-SPC detector
-│   │   └── data_generator.py  # Synthetic data generator
-│   ├── models/                # Trained model pickles
-│   ├── outputs/               # Prediction outputs
-│   └── prediction_input.csv   # Sample input CSV
-│
-├── frontend/                   # React + Vite frontend
-│   ├── src/
-│   │   ├── api.js             # API service layer
-│   │   ├── App.jsx            # Main app component
-│   │   ├── components/        # Reusable components
-│   │   └── pages/             # Page components
-│   ├── vite.config.js         # Vite config with API proxy
-│   └── package.json
-│
-├── model-training/             # Model training scripts
-│   ├── anomaly_ensemble/
-│   ├── drift_model/
-│   ├── src/                   # Shared source modules
-│   └── requirements.txt
-│
-├── docker-compose.yml         # Docker Compose configuration
-├── package.json               # Root package.json with workspaces
-└── README.md                  # This file
-```
+Returns dashboard KPI statistics including total components, anomaly rate, and pass rate.
 
 ## Configuration
 
@@ -326,6 +334,7 @@ API_HOST=0.0.0.0
 API_PORT=8000
 MODEL_PATH=./models
 OUTPUT_PATH=./outputs
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 ```
 
 Create a `.env` file in the `frontend/` directory:
@@ -350,6 +359,25 @@ Input CSV should have one row per checkpoint measurement per DUT:
 | `delay_ns` | float | Propagation delay |
 
 The `calibration_source` column is automatically excluded from features.
+
+## Model Training
+
+First time setup — train models after installing dependencies:
+
+```bash
+# Cross-platform (recommended)
+npm run train
+
+# Windows (CMD)
+scripts\train-models.bat
+
+# macOS / Linux
+./scripts/train-models.sh
+```
+
+Models are saved to `backend/models/`:
+- `anomaly_ensemble_model.pkl`
+- `drift_model.pkl`
 
 ## Docker Deployment
 
@@ -403,6 +431,72 @@ curl http://localhost:8000/health
 curl http://localhost:8000/api/duts
 ```
 
+## Project Structure
+
+```
+LatentGuard-AI/
+├── backend/                    # FastAPI backend
+│   ├── main.py                # FastAPI app with all endpoints
+│   ├── predict.py             # CLI prediction script
+│   ├── requirements.txt       # Python dependencies
+│   ├── src/                   # ML source modules
+│   │   ├── features.py        # Feature engineering
+│   │   ├── risk_engine.py     # Risk fusion engine
+│   │   ├── digital_twin.py    # Digital twin projection
+│   │   ├── explainability.py  # Plain-language explanations
+│   │   ├── anomaly_ensemble.py # Hybrid anomaly ensemble
+│   │   ├── drift_model.py     # Drift prediction
+│   │   ├── spc.py             # PCA-SPC detector
+│   │   ├── data_generator.py  # Synthetic data generator
+│   │   ├── data_cleaner.py    # CSV cleaning and validation
+│   │   └── failure_chatbot.py # COSMO chatbot integration
+│   ├── models/                # Trained model pickles
+│   ├── outputs/               # Prediction outputs and audit logs
+│   └── prediction_input.csv   # Sample input CSV
+│
+├── docs/                       # Documentation
+│   ├── architecture.md        # System architecture details
+│   ├── api-reference.md       # API endpoint reference
+│   ├── contributing.md        # Contributing guidelines
+│   ├── deployment.md          # Deployment guides
+│   ├── installation.md        # Installation guide
+│   ├── model-training.md      # Model training documentation
+│   └── overview.md            # Project overview
+│
+├── frontend/                   # React + Vite frontend
+│   ├── src/
+│   │   ├── api.js             # API service layer
+│   │   ├── App.jsx            # Main app component
+│   │   ├── components/        # Reusable components
+│   │   └── pages/             # Page components
+│   ├── vite.config.js         # Vite config with API proxy
+│   └── package.json
+│
+├── model-training/             # Model training scripts
+│   ├── anomaly_ensemble/
+│   ├── drift_model/
+│   ├── src/                   # Shared source modules
+│   └── requirements.txt
+│
+├── scripts/                    # Scripts for all platforms
+│   ├── install-dependencies.sh # macOS / Linux
+│   ├── install-dependencies.bat # Windows CMD
+│   ├── install-dependencies.ps1 # Windows PowerShell
+│   ├── run-backend.sh          # macOS / Linux
+│   ├── run-backend.bat         # Windows CMD
+│   ├── run-backend.ps1         # Windows PowerShell
+│   ├── run-frontend.sh         # macOS / Linux
+│   ├── run-frontend.bat        # Windows CMD
+│   ├── run-frontend.ps1        # Windows PowerShell
+│   ├── train-models.sh         # macOS / Linux
+│   ├── train-models.bat        # Windows CMD
+│   └── train-models.ps1        # Windows PowerShell
+│
+├── docker-compose.yml         # Docker Compose configuration
+├── package.json               # Root package.json with workspaces
+└── README.md                  # This file
+```
+
 ## Contributing
 
 1. Fork the repository
@@ -411,10 +505,6 @@ curl http://localhost:8000/api/duts
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## License
-
-This project is licensed under the MIT License.
-
 ---
 
-**BurnInGuard AI 2.0** -- Physics-informed, explainable PASS/FAIL prediction for component burn-in screening.
+**LatentGuard AI** — Physics-informed, explainable PASS/FAIL prediction for component burn-in screening.

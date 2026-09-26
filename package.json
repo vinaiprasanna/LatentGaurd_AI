@@ -1,21 +1,23 @@
 {
-  "name": "burninguard-ai",
-  "version": "2.0.0",
+  "name": "latentguard-ai",
+  "version": "1.0.0",
   "private": true,
-  "description": "BurnInGuard AI 2.0 - Physics-informed, explainable PASS/FAIL prediction for component burn-in screening",
+  "description": "LatentGuard AI - Physics-informed, explainable PASS/FAIL prediction for component burn-in screening",
   "workspaces": [
     "backend",
     "frontend",
     "model-training"
   ],
   "scripts": {
+    "install:all": "node scripts/install-all.js",
+    "train": "node scripts/train-all.js",
+    "dev:backend": "node scripts/run-backend.js",
+    "dev:frontend": "node scripts/run-frontend.js",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "cd backend && pip install -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000 --reload",
-    "dev:frontend": "cd frontend && npm install && npm run dev",
     "build": "cd frontend && npm run build",
-    "train": "cd model-training && pip install -r requirements.txt && python anomaly_ensemble/train.py && python drift_model/train.py",
-    "predict": "cd backend && python predict.py",
-    "prediction:csv": "cd backend && python predict.py --input prediction_input.csv --output outputs/prediction_output.csv"
+    "test": "node scripts/test-all.js",
+    "clean": "node scripts/clean-all.js",
+    "setup": "npm run install:all && npm run train"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"

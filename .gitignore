@@ -1,26 +1,51 @@
-venv/
-burnin_guard_ai_poc/selfnote.md
-burnin_guard_ai_poc/src/__pycache__
-node_modules
+# Virtual environments
 .venv/
+venv/
+
+# IDE
 .vscode/
+.idea/
 
+# Build artifacts
+dist/
+build/
+*.egg-info/
+frontend/dist/
+frontend/node_modules/
+node_modules/
 
-prototype-1/
-
-project-trial-2/
+# Generated files
 __pycache__/
 *.pyc
 *.pyo
-models/*.pkl
-outputs/*.csv
-.venv/
-venv/
-*.egg-info/
-dist/
-build/
-.env
-.DS_Store
+backend/models/*.pkl
+backend/models/*_metrics.json
+backend/outputs/*.csv
+backend/outputs/jobs/
+backend/outputs/audit_jobs.json
+backend/outputs/review_actions.json
+backend/outputs/prediction_output.csv
+model-training/env_installed.txt
+model-training/backend/env_installed.txt
+backend/env_installed.txt
 *.log
-node_modules/
-frontend/dist/
+pytest_cache/
+.coverage
+htmlcov/
+
+# Environment files
+.env
+.env.local
+.DS_Store
+
+# OS files
+Thumbs.db
+
+# Test artifacts
+.pytest_cache/
+
+# Obsolete
+prototype-1/
+
+# PowerShell
+*.ps1~

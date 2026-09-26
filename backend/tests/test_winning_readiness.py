@@ -13,6 +13,11 @@ import main
 from main import filter_output_columns, resolve_allowed_origins
 
 
+@pytest.fixture(autouse=True)
+def disable_database_for_tests(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+
 def test_resolve_allowed_origins_reads_env(monkeypatch):
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://app.example.com, https://admin.example.com")
     assert resolve_allowed_origins() == [
@@ -135,6 +140,38 @@ def test_prediction_job_persists_provenance(monkeypatch, tmp_path):
     snapshot = main.get_audit_job_results(job_id)
     assert snapshot["job_id"] == job_id
     assert snapshot["results"][0]["dut_id"] == "DUT-001"
+
+
+def test_database_snapshot_restores_dashboard_results(monkeypatch):
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def execute(self, query):
+            assert "SELECT results FROM audit_jobs" in query
+            return self
+
+        def fetchone(self):
+            return ([{
+                "dut_id": "DUT-001",
+                "lot_id": "LOT-1",
+                "risk_score": 25.0,
+                "risk_band": "LOW",
+                "predicted_outcome": "PASS",
+                "internal_feature": 123,
+            }],)
+
+    monkeypatch.setattr(main, "_active_results", None)
+    monkeypatch.setattr(main, "_database_enabled", lambda: True)
+    monkeypatch.setattr(main, "_connect_database", FakeConnection)
+
+    restored = main._get_active_uploaded_results()
+
+    assert restored.iloc[0]["dut_id"] == "DUT-001"
+    assert "internal_feature" not in restored.columns
 
 
 def test_review_action_persists_with_job_link(monkeypatch, tmp_path):

@@ -7,4 +7,6 @@ xgboost>=2.0
 scipy>=1.11
 shap>=0.44
 python-multipart>=0.0.6
+psycopg[binary]>=3.2,<4
+python-dotenv>=1.0
 pytest>=8.0.0
