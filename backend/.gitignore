@@ -1,7 +1,6 @@
 __pycache__/
 *.pyc
 *.pyo
-models/*.pkl
 models/*_metrics.json
 outputs/*.csv
 outputs/jobs/

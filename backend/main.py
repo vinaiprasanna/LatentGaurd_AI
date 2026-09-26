@@ -13,9 +13,11 @@ import uuid
 from datetime import datetime, timezone
 import pandas as pd
 import numpy as np
+from dotenv import load_dotenv
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_absolute_error, mean_squared_error, r2_score
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(ROOT, ".env"))
 SRC_DIR = os.path.join(ROOT, "src")
 MODELS_DIR = os.path.join(ROOT, "models")
 sys.path.insert(0, SRC_DIR)
@@ -45,6 +47,22 @@ def load_models():
     return ensemble, drift_models
 
 
+def _database_enabled() -> bool:
+    return bool(os.getenv("DATABASE_URL"))
+
+
+def _connect_database():
+    import psycopg
+
+    return psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=10)
+
+
+def _jsonb(value):
+    from psycopg.types.json import Jsonb
+
+    return Jsonb(value)
+
+
 _models = load_models()
 _active_results = None
 _active_audit_results = None
@@ -56,6 +74,12 @@ _active_job_id = None
 
 
 def _load_audit_jobs():
+    if _database_enabled():
+        with _connect_database() as connection:
+            rows = connection.execute(
+                "SELECT record FROM audit_jobs ORDER BY created_at ASC LIMIT 100"
+            ).fetchall()
+        return [row[0] for row in rows]
     if not os.path.exists(AUDIT_STORE_PATH):
         return []
     try:
@@ -67,6 +91,12 @@ def _load_audit_jobs():
 
 
 def _load_review_actions():
+    if _database_enabled():
+        with _connect_database() as connection:
+            rows = connection.execute(
+                "SELECT record FROM review_actions ORDER BY created_at ASC LIMIT 500"
+            ).fetchall()
+        return [row[0] for row in rows]
     if not os.path.exists(REVIEW_STORE_PATH):
         return []
     try:
@@ -94,6 +124,17 @@ def _record_review_action(dut_id: str, lot_id: str, action: str):
         "action": action,
         "status": status_by_action[action],
     }
+    if _database_enabled():
+        with _connect_database() as connection:
+            connection.execute(
+                "INSERT INTO review_actions (action_id, created_at, record) VALUES (%s, %s, %s)",
+                (record["action_id"], record["created_at"], _jsonb(record)),
+            )
+            connection.execute(
+                "DELETE FROM review_actions WHERE action_id IN "
+                "(SELECT action_id FROM review_actions ORDER BY created_at DESC OFFSET 500)"
+            )
+        return record
     actions = _load_review_actions()
     actions.append(record)
     os.makedirs(os.path.dirname(REVIEW_STORE_PATH), exist_ok=True)
@@ -107,8 +148,10 @@ def _record_prediction_job(filename: str, raw_df: pd.DataFrame, cleaned_df: pd.D
     input_hash = hashlib.sha256(raw_df.to_csv(index=False).encode("utf-8")).hexdigest()
     stage_a_flags = int(results.get("stage_a_flag", pd.Series(dtype=bool)).fillna(False).sum())
     result_path = os.path.join(JOB_RESULTS_DIR, f"{job_id}.csv")
-    os.makedirs(JOB_RESULTS_DIR, exist_ok=True)
-    results.to_csv(result_path, index=False)
+    database_enabled = _database_enabled()
+    if not database_enabled:
+        os.makedirs(JOB_RESULTS_DIR, exist_ok=True)
+        results.to_csv(result_path, index=False)
     record = {
         "job_id": job_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -124,8 +167,20 @@ def _record_prediction_job(filename: str, raw_df: pd.DataFrame, cleaned_df: pd.D
         "stage_a_flagged": stage_a_flags,
         "risk_counts": results["risk_band"].value_counts().to_dict() if "risk_band" in results else {},
         "cleaning_report": report.as_dict(),
-        "result_file": os.path.relpath(result_path, ROOT),
+        "result_file": None if database_enabled else os.path.relpath(result_path, ROOT),
     }
+    if database_enabled:
+        result_rows = json.loads(results.to_json(orient="records", date_format="iso"))
+        with _connect_database() as connection:
+            connection.execute(
+                "INSERT INTO audit_jobs (job_id, created_at, record, results) VALUES (%s, %s, %s, %s)",
+                (job_id, record["created_at"], _jsonb(record), _jsonb(result_rows)),
+            )
+            connection.execute(
+                "DELETE FROM audit_jobs WHERE job_id IN "
+                "(SELECT job_id FROM audit_jobs ORDER BY created_at DESC OFFSET 100)"
+            )
+        return job_id
     jobs = _load_audit_jobs()
     jobs.append(record)
     retained_jobs = jobs[-100:]
@@ -647,7 +702,20 @@ def _load_prediction_input_if_available():
 
 def _get_active_uploaded_results():
     """Return only the currently uploaded prediction results; never read the repo-local CSV by default."""
-    return _active_results
+    if _active_results is not None:
+        return _active_results
+    latest_results = _get_latest_prediction_results()
+    return filter_output_columns(latest_results) if latest_results is not None else None
+
+
+def _get_latest_prediction_results():
+    if not _database_enabled():
+        return None
+    with _connect_database() as connection:
+        row = connection.execute(
+            "SELECT results FROM audit_jobs ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+    return pd.DataFrame(row[0]) if row is not None else None
 
 
 def _get_all_duts():
@@ -882,9 +950,12 @@ def get_audit_log():
 @app.get("/api/audit-log/export")
 def get_audit_log_export():
     """Return the complete current prediction frame for audit export."""
-    if _active_audit_results is None or _active_audit_results.empty:
+    audit_results = _active_audit_results
+    if audit_results is None:
+        audit_results = _get_latest_prediction_results()
+    if audit_results is None or audit_results.empty:
         return {"rows": [], "row_count": 0, "message": "No uploaded prediction results are available."}
-    export = _active_audit_results.copy()
+    export = audit_results.copy()
     export["model_version"] = "BG-AI-2.0"
     export["feature_schema_version"] = "32"
     export["anomaly_threshold"] = _get_anomaly_threshold()
@@ -904,6 +975,14 @@ def get_audit_job_results(job_id: str):
     """Return the sanitized prediction snapshot associated with an audit job."""
     if not job_id.startswith("job_"):
         raise HTTPException(status_code=400, detail="Invalid job ID")
+    if _database_enabled():
+        with _connect_database() as connection:
+            row = connection.execute(
+                "SELECT results FROM audit_jobs WHERE job_id = %s", (job_id,)
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Prediction snapshot not found")
+        return {"job_id": job_id, "results": row[0]}
     result_path = os.path.join(JOB_RESULTS_DIR, f"{job_id}.csv")
     if not os.path.isfile(result_path):
         raise HTTPException(status_code=404, detail="Prediction snapshot not found")

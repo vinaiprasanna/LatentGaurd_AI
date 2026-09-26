@@ -9,6 +9,8 @@ services:
       - "8000:8000"
     environment:
       - MODEL_LOAD=true
+      - DATABASE_URL=${DATABASE_URL:-}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     volumes:
       - ./backend/models:/app/models
       - ./backend/outputs:/app/outputs
