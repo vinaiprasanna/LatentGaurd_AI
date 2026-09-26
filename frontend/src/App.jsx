@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import spaceBackground from './assets/space-background.png'
 import './App.css'
 import { api } from './api'
@@ -22,7 +22,7 @@ function App() {
     high_risk_components: 0,
     anomaly_rate: '0%',
   })
-  const [loading, setLoading] = useState(true)
+  const [loading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
 
@@ -47,27 +47,6 @@ function App() {
       }
     }))
   }, [])
-
-  const fetchDashboardData = useCallback(async () => {
-    try {
-      const [dutsData, statsData, reviewData, jobData] = await Promise.all([
-        api.getDuts(),
-        api.getDashboardStats(),
-        api.getReviewActions(),
-        api.getAuditJobs(),
-      ])
-      const duts = dutsData.duts || []
-      setAnomalyData(duts)
-      const currentJobId = jobData.jobs?.[0]?.job_id
-      const currentActions = (reviewData.actions || []).filter((action) => action.job_id === currentJobId)
-      syncInvestigationQueue(duts, currentActions)
-      setStats(statsData)
-    } catch (err) {
-      console.error('Failed to fetch dashboard data:', err)
-    } finally {
-      setLoading(false)
-    }
-  }, [syncInvestigationQueue])
 
   const handleCsvUpload = async (event) => {
     const file = event.target.files?.[0]
@@ -103,15 +82,6 @@ function App() {
       setUploading(false)
     }
   }
-
-  useEffect(() => {
-    const initialLoad = setTimeout(fetchDashboardData, 0)
-    const interval = setInterval(fetchDashboardData, 30000)
-    return () => {
-      clearTimeout(initialLoad)
-      clearInterval(interval)
-    }
-  }, [fetchDashboardData])
 
   const persistReviewAction = async (item, action) => {
     try {
